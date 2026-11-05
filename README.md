@@ -114,6 +114,18 @@ Grantees edit their profile through a private, expiring link — no accounts:
 PUBLIC_BASE_URL=https://ddisa.netlify.app npm run invite -- "Digital Woman Uganda" 30
 ```
 
+Or generate **every** organisation's link in one run (mail-merge ready):
+
+```bash
+npm run invite:all -- 30
+```
+
+That writes `.data/edit-links.csv` — columns: organisation, slug, public_email,
+edit_link, expires_at — reading each org's current `token_version` from
+Supabase (or the embedded snapshot if Supabase isn't configured). The CSV
+contains a live credential for every profile: keep it private, use it for the
+mail merge, then delete it (`.data/` is gitignored).
+
 The link is valid for the given number of days and permits edits only for the
 named organisation. How it holds together:
 

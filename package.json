@@ -8,13 +8,14 @@
     "start": "node server/index.mjs",
     "dev": "node --watch server/index.mjs",
     "invite": "node scripts/create-profile-link.mjs",
+    "invite:all": "node scripts/create-all-profile-links.mjs",
     "build:seed": "node scripts/build-supabase-seed.mjs",
     "build:netlify": "node scripts/build-netlify.mjs",
     "upload:assets": "node scripts/upload-assets.mjs",
     "build:shareable": "node scripts/build-shareable.mjs",
     "build:developer-prototype": "node scripts/build-developer-prototype.mjs",
     "qa": "npm run check && npm test && npm run build:shareable && npm run build:developer-prototype && npm run build:netlify",
-    "check": "node --check server/index.mjs && node --check server/lib/supabase-store.mjs && node --check server/lib/submissions.mjs && node --check server/lib/function-kit.mjs && node --check server/lib/tokens.mjs && node --check functions/access.mjs && node --check functions/submissions.mjs && node --check functions/collaboration-requests.mjs && node --check functions/health.mjs && node --check scripts/create-profile-link.mjs && node --check scripts/build-supabase-seed.mjs && node --check scripts/upload-assets.mjs && node --check scripts/build-netlify.mjs && node --check scripts/netlify-runtime.js && node --check scripts/build-developer-prototype.mjs",
+    "check": "node --check server/index.mjs && node --check server/lib/supabase-store.mjs && node --check server/lib/submissions.mjs && node --check server/lib/function-kit.mjs && node --check server/lib/tokens.mjs && node --check functions/access.mjs && node --check functions/submissions.mjs && node --check functions/collaboration-requests.mjs && node --check functions/health.mjs && node --check scripts/create-profile-link.mjs && node --check scripts/create-all-profile-links.mjs && node --check scripts/build-supabase-seed.mjs && node --check scripts/upload-assets.mjs && node --check scripts/build-netlify.mjs && node --check scripts/netlify-runtime.js && node --check scripts/build-developer-prototype.mjs",
     "test": "node --test"
   },
   "engines": {
