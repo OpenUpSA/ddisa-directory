@@ -1,0 +1,16 @@
+# Static deployment of the DDISA directory (Supabase-backed front-end).
+#
+# Set these two environment variables in Netlify (Site settings >
+# Environment variables) — the build injects them into netlify/config.js:
+#   SUPABASE_URL       https://<project>.supabase.co   (Settings > API)
+#   SUPABASE_ANON_KEY  the anon/public key             (Settings > API)
+#
+# Alternatively edit netlify/config.js by hand before dragging the netlify/
+# folder into Netlify. Never set the service-role key here.
+
+[build]
+  command = "npm run build:netlify"
+  publish = "netlify"
+
+[build.environment]
+  NODE_VERSION = "24"
