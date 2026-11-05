@@ -53,3 +53,27 @@ test('netlify config.js carries Supabase connection settings', async () => {
   assert.match(config, /SUPABASE_ANON_KEY:/);
   assert.doesNotMatch(config, /service_role|SERVICE_ROLE/i, 'The service-role key must never appear in config.js.');
 });
+
+test('modules bundled into functions avoid import.meta (breaks Netlify CJS bundles)', async () => {
+  // esbuild empties `import.meta` in the CommonJS output Netlify ships;
+  // referencing it crashed every function at load time with "Invalid URL".
+  const bundled = [
+    'server/lib/function-kit.mjs',
+    'server/lib/submissions.mjs',
+    'server/lib/tokens.mjs',
+    'server/lib/validation.mjs',
+    'server/lib/supabase-store.mjs',
+    'server/lib/env.mjs',
+    'functions/access.mjs',
+    'functions/submissions.mjs',
+    'functions/collaboration-requests.mjs',
+    'functions/health.mjs',
+  ];
+  for (const file of bundled) {
+    const source = await readFile(resolve(root, file), 'utf8');
+    assert.ok(
+      !source.includes('import.meta'),
+      `${file} must not use import.meta — it is empty in Netlify's CJS bundles.`,
+    );
+  }
+});

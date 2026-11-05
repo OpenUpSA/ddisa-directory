@@ -1,19 +1,32 @@
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { loadEnv } from './env.mjs';
 import { SupabaseStore } from './supabase-store.mjs';
 
-const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-
 let store;
+let envLoaded = false;
+
+/**
+ * Local-dev convenience: pick up the project .env when present. Production
+ * (Netlify) injects env natively, and `netlify dev` loads .env itself.
+ * Uses process.cwd() — never the module URL, which esbuild empties in the
+ * CommonJS bundles Netlify ships (it crashed every function at load time).
+ */
+function ensureLocalEnv() {
+  if (envLoaded) return;
+  envLoaded = true;
+  try {
+    loadEnv(process.cwd());
+  } catch {
+    // Missing .env is normal in production.
+  }
+}
 
 /**
  * Supabase store for serverless handlers. Reads env natively on Netlify and
- * falls back to the project .env for local `netlify dev` / test runs.
+ * falls back to the project .env for local runs.
  * Never expose SUPABASE_SERVICE_ROLE_KEY to the browser — functions only.
  */
 export function getStore() {
-  loadEnv(root);
+  ensureLocalEnv();
   if (!store) {
     store = new SupabaseStore({
       baseUrl: process.env.SUPABASE_URL,
@@ -24,7 +37,7 @@ export function getStore() {
 }
 
 export function getTokenSecret() {
-  loadEnv(root);
+  ensureLocalEnv();
   const secret = process.env.PROFILE_LINK_SECRET;
   if (!secret || secret.startsWith('replace-')) {
     const error = new Error('PROFILE_LINK_SECRET must be configured.');
