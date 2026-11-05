@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findExpression } from '../server/lib/directory-data.mjs';
+import { loadEnv } from '../server/lib/env.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const htmlPath = 'DDISA - Grantee Directory.html';
@@ -55,8 +56,19 @@ export async function buildNetlify(directoryRoot = root) {
     `${grab('function mapSupabaseOrganisation')}\n${grab('async function hydrateDirectory')}`,
   );
 
-  // 3. Remove the collaboration request button (no write backend yet).
-  html = replaceBlock(html, 'function collaborationMarkup', grab('function collaborationMarkup'));
+  // 3. Point the write flows at the Netlify Functions.
+  const apiRewrites = [
+    [
+      "`./api/access?token=${encodeURIComponent(editToken)}`",
+      "`/.netlify/functions/access?token=${encodeURIComponent(editToken)}`",
+    ],
+    ["'./api/submissions'", "'/.netlify/functions/submissions'"],
+    ["'./api/collaboration-requests'", "'/.netlify/functions/collaboration-requests'"],
+  ];
+  for (const [from, to] of apiRewrites) {
+    html = requireInclude(html, from, `the API URL ${from}`);
+    html = html.replace(from, to);
+  }
 
   // 4. Load config.js (Supabase URL + anon key) before the main script.
   html = requireInclude(html, '<script>\n// Cohort 1 directory.', 'the main script tag');
@@ -85,7 +97,8 @@ export async function buildNetlify(directoryRoot = root) {
 }
 
 export function renderConfig(supabaseUrl = '', anonKey = '') {
-  const injected = Boolean(supabaseUrl && anonKey);
+  const usable = (value) => Boolean(value) && !String(value).startsWith('replace-');
+  const injected = usable(supabaseUrl) && usable(anonKey);
   const url = injected ? supabaseUrl.replace(/\/+$/, '') : 'https://YOUR-PROJECT.supabase.co';
   const key = injected ? anonKey : 'YOUR-ANON-PUBLIC-KEY';
   return `// Supabase connection for the static DDISA directory.
@@ -105,6 +118,7 @@ window.DDISA_ENV = {
 }
 
 async function main() {
+  loadEnv(root);
   const supabaseUrl = process.env.SUPABASE_URL || '';
   const anonKey = process.env.SUPABASE_ANON_KEY || '';
   const html = await buildNetlify(root);

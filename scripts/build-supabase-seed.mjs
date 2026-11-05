@@ -2,17 +2,13 @@ import { resolve } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { extractDirectoryData } from '../server/lib/directory-data.mjs';
-import { COUNTRIES, REGIONS, CSO_TYPES } from '../server/lib/validation.mjs';
+import { COUNTRIES, REGIONS, CSO_TYPES, slugify } from '../server/lib/validation.mjs';
+
+// Re-exported for existing tests/tools that import it from here.
+export { slugify };
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const outputPath = resolve(root, 'supabase', 'seed.sql');
-
-/**
- * Same scheme the front-end and edit-link scripts use for organisation IDs.
- */
-export function slugify(name) {
-  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
 
 function sqlString(value) {
   return `'${String(value).replace(/'/g, "''")}'`;

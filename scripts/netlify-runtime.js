@@ -126,6 +126,7 @@ async function hydrateDirectory() {
     document.querySelector('.private').textContent = source;
     document.querySelector('.private').title = source;
     setAlert('app-alert', '', '');
+    $('open-add-organisation').hidden = false;
   } catch (error) {
     console.warn('Supabase directory unavailable.', error);
     setAlert(
@@ -134,21 +135,8 @@ async function hydrateDirectory() {
       'error',
     );
   }
+  await initialiseEditAccess();
 }
 
-// Collaboration request buttons are removed until the authenticated
-// submission backend exists; the section itself still renders.
-function collaborationMarkup(d) {
-  if (!d.matched) return '';
-  const note =
-    '<p class="collab-note">Collaboration requests will be available once organisation sign-in launches.</p>';
-  const confirmed = d.collaboration && !/not yet been confirmed|pending confirmation/i.test(d.collaboration);
-  if (confirmed) return `<section class="profile-section"><h3>Open for collaboration</h3><div class="collab-card"><p>${esc(d.collaboration)}</p>${note}</div></section>`;
-  const areas = [];
-  if (d.focus.some((area) => focusGroups['Civic participation & democracy'].includes(area))) areas.push('Civic participation and peer learning');
-  if (d.focus.some((area) => focusGroups['Transparency & access to information'].includes(area))) areas.push('Research and accountability partnerships');
-  if (d.focus.some((area) => focusGroups['Digital rights & online safety'].includes(area))) areas.push('Digital rights and online safety');
-  if (d.focus.some((area) => focusGroups['Gender justice'].includes(area))) areas.push('Gender justice partnerships');
-  if (d.focus.some((area) => focusGroups['Disability inclusion'].includes(area))) areas.push('Disability-inclusive partnerships');
-  return `<section class="profile-section"><h3>Open for collaboration</h3><div class="collab-card"><p>Potential collaboration areas based on this organisation's stated work.</p><div class="collab-chips">${areas.map((area) => `<span class="collab-chip">${esc(area)}</span>`).join('')}</div>${note}</div></section>`;
-}
+// collaborationMarkup is kept from the source HTML: its request buttons now
+// work against /.netlify/functions/collaboration-requests.

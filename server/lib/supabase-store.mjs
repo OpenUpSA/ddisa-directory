@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { slugify } from './validation.mjs';
 
 const DEFAULT_BUCKETS = {
   logos: 'organisation-logos',
@@ -211,6 +212,224 @@ export class SupabaseStore {
     return rows[0] || null;
   }
 
+  /**
+   * Replace the child rows of an organisation with the validated submission
+   * payload (types, offerings, contacts, resources).
+   */
+  async replaceChildren(organisationId, payload) {
+    const typeRows = (payload.type || []).map((csoType) => ({
+      organisation_id: organisationId,
+      cso_type: csoType,
+    }));
+    const offeringRows = [
+      ...(payload.offerings?.tools || []).map((item, index) => ({
+        organisation_id: organisationId,
+        kind: 'tool',
+        name: item.name,
+        description: item.description || '',
+        sort_order: index,
+      })),
+      ...(payload.offerings?.services || []).map((item, index) => ({
+        organisation_id: organisationId,
+        kind: 'service',
+        name: item.name,
+        description: item.description || '',
+        sort_order: index,
+      })),
+    ];
+    const contactRows = (payload.contacts || []).map((contact, index) => ({
+      organisation_id: organisationId,
+      type: contact.type,
+      name: contact.name,
+      email: contact.email || '',
+      number: contact.number || '',
+      url: contact.url || '',
+      role: contact.role || '',
+      description: contact.description || '',
+      sort_order: index,
+    }));
+    const resourceRows = (payload.resources || []).map((resource, index) => ({
+      organisation_id: organisationId,
+      title: resource.title,
+      url: resource.url,
+      description: resource.description || '',
+      sort_order: index,
+    }));
+
+    for (const table of ['organisation_types', 'offerings', 'contacts', 'resources']) {
+      await this.rest(table, {
+        method: 'DELETE',
+        query: { organisation_id: `eq.${organisationId}` },
+      });
+    }
+    if (typeRows.length) {
+      await this.rest('organisation_types', { method: 'POST', body: typeRows });
+    }
+    if (offeringRows.length) {
+      await this.rest('offerings', { method: 'POST', body: offeringRows });
+    }
+    if (contactRows.length) {
+      await this.rest('contacts', { method: 'POST', body: contactRows });
+    }
+    if (resourceRows.length) {
+      await this.rest('resources', { method: 'POST', body: resourceRows });
+    }
+  }
+
+  /** Best-effort audit row — failures are logged, never block publishing. */
+  async auditSubmission(payload, { organisationSlug, photoPath = '', logoPath = '' }) {
+    try {
+      await this.rest('submissions', {
+        method: 'POST',
+        body: {
+          id: randomUUID(),
+          request_type: payload.requestType || 'Profile update',
+          organisation_slug: organisationSlug,
+          organisation_name: payload.organisationName || payload.name || '',
+          payload,
+          photo_path: photoPath,
+          logo_path: logoPath,
+          review_status: 'Approved',
+          submitted_at: new Date().toISOString(),
+          reviewed_at: new Date().toISOString(),
+          internal_notes: 'Published automatically after server-side validation.',
+        },
+      });
+    } catch (error) {
+      console.error('Audit row could not be written:', error.message);
+    }
+  }
+
+  /**
+   * Direct publication of a profile update (signed edit link already verified
+   * by the caller). Uploads images to the public buckets at stable slug paths,
+   * updates the organisation row, then replaces its child rows.
+   */
+  async publishProfileUpdate(organisationId, payload, photo, logo) {
+    const rows = await this.rest('organisations', {
+      query: {
+        select: 'id,slug,name,photo_path,logo_path',
+        slug: `eq.${organisationId}`,
+        limit: 1,
+      },
+    });
+    const organisation = rows[0];
+    if (!organisation) {
+      const error = new Error('The organisation could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    const slug = organisation.slug;
+
+    let photoPath = organisation.photo_path || '';
+    if (photo) {
+      const extension = imageExtension(photo.contentType);
+      photoPath = `organisation-photos/profiles/${slug}.${extension}`;
+      await this.uploadObject(this.buckets.photos, `profiles/${slug}.${extension}`, photo);
+    }
+    let logoPath = organisation.logo_path || '';
+    if (logo) {
+      const extension = imageExtension(logo.contentType);
+      logoPath = `organisation-logos/logos/${slug}.${extension}`;
+      await this.uploadObject(this.buckets.logos, `logos/${slug}.${extension}`, logo);
+    }
+
+    await this.rest('organisations', {
+      method: 'PATCH',
+      query: { slug: `eq.${slug}` },
+      body: {
+        summary: payload.summary,
+        description: payload.description,
+        collaboration: payload.collaboration || '',
+        public_email: payload.publicEmail || payload.contactEmail || null,
+        photo_alt: payload.photoAlt || '',
+        photo_path: photoPath,
+        logo_path: logoPath,
+      },
+    });
+
+    await this.replaceChildren(organisation.id, payload);
+    await this.auditSubmission(payload, {
+      organisationSlug: slug,
+      photoPath,
+      logoPath,
+    });
+    return { id: slug, table: 'organisations' };
+  }
+
+  /**
+   * Direct publication of a new organisation. Rejects duplicates (slug or
+   * case-insensitive name) with 409, then inserts org → children → publish.
+   */
+  async publishNewOrganisation(payload, photo, logo) {
+    const slug = slugify(payload.name);
+    const wanted = String(payload.name).trim().toLowerCase();
+    const existing = await this.rest('organisations', { query: { select: 'slug,name' } });
+    if (
+      existing.some(
+        (row) => row.slug === slug || String(row.name || '').trim().toLowerCase() === wanted,
+      )
+    ) {
+      const error = new Error('An organisation with this name is already in the directory.');
+      error.status = 409;
+      throw error;
+    }
+
+    let logoPath = '';
+    if (logo) {
+      const extension = imageExtension(logo.contentType);
+      logoPath = `organisation-logos/logos/${slug}.${extension}`;
+      await this.uploadObject(this.buckets.logos, `logos/${slug}.${extension}`, logo);
+    }
+    let photoPath = '';
+    if (photo) {
+      const extension = imageExtension(photo.contentType);
+      photoPath = `organisation-photos/profiles/${slug}.${extension}`;
+      await this.uploadObject(this.buckets.photos, `profiles/${slug}.${extension}`, photo);
+    }
+
+    const created = await this.rest('organisations', {
+      method: 'POST',
+      body: {
+        slug,
+        name: payload.name,
+        country: payload.country,
+        region: payload.region,
+        summary: payload.summary,
+        description: payload.description,
+        collaboration: payload.collaboration || '',
+        public_email: payload.publicEmail || payload.contactEmail || null,
+        focus_areas: [],
+        matched: true,
+        logo_path: logoPath,
+        photo_path: photoPath,
+        photo_alt: payload.photoAlt || '',
+        publication_status: 'published',
+      },
+    });
+    const row = Array.isArray(created) ? created[0] : null;
+    if (!row?.id) {
+      const error = new Error('The organisation could not be created.');
+      error.status = 502;
+      throw error;
+    }
+
+    if (payload.website) {
+      await this.rest('social_links', {
+        method: 'POST',
+        body: [{ organisation_id: row.id, platform: 'website', url: payload.website, sort_order: 0 }],
+      });
+    }
+
+    await this.replaceChildren(row.id, payload);
+    await this.auditSubmission(payload, {
+      organisationSlug: slug,
+      photoPath,
+      logoPath,
+    });
+    return { id: slug, table: 'organisations' };
+  }
+
   async createSubmission(payload, photo, logo) {
     const id = randomUUID();
     const uploads = [];
@@ -259,6 +478,7 @@ export class SupabaseStore {
         sender_email: payload.senderEmail,
         collaboration_type: payload.collaborationType,
         message: payload.message,
+        consent_shared: payload.consentShared === true,
         status: 'New',
       },
     });

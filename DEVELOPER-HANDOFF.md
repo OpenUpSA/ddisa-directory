@@ -3,9 +3,10 @@
 ## Release status
 
 This package contains the QA-reviewed directory prototype and its reference
-server. The front-end workflows are ready for developer implementation. The
-Supabase production backend, automatic edit-link email delivery, and
-collaboration-request notifications are not yet implemented.
+server, plus the Supabase production backend: schema + seed, the static
+Netlify site, and Netlify Functions for edit links, submissions and
+collaboration requests. Automatic edit-link email delivery and
+collaboration-request notifications are not yet connected.
 
 The final product decisions are:
 
@@ -133,19 +134,21 @@ all incoming fields on the server before writing.
 
 ## Required production work
 
-1. Apply `supabase/schema.sql` (schema, RLS policies and storage buckets)
-   to the Supabase project.
-2. Load `supabase/seed.sql` and run `npm run upload:assets` to migrate the 46
-   embedded records and their images.
-3. Implement signed edit-link validation against Supabase.
-4. Implement direct profile publication with server-side validation.
-5. Implement new-organisation publication and duplicate checking.
-6. Generate and email a private edit link after new-organisation creation.
-7. Persist collaboration requests and send recipient notifications.
-8. Add retention, deletion and consent handling for collaboration messages.
-9. Configure Netlify deployment and route all database writes through server
-   functions.
-10. Add production bot protection or CAPTCHA and monitor submission rate limits.
+Done in this package: the Supabase schema, RLS and buckets
+(`supabase/schema.sql`); the 46-record seed and asset upload
+(`supabase/seed.sql`, `npm run upload:assets`); signed edit-link validation
+with revocation via `organisations.token_version`; direct profile and
+new-organisation publication with server-side validation and duplicate
+checking; and the Netlify deployment (static site + `functions/`).
+
+Remaining:
+
+1. Email delivery: send new organisations their private edit link and notify
+   collaboration-request recipients.
+2. Retention and deletion handling for collaboration messages (the consent
+   flag is captured on submit).
+3. Turnstile/CAPTCHA bot protection and durable (cross-instance) rate limits.
+4. Optional Supabase Auth for organisation sign-in alongside edit links.
 
 ## Reference API
 
@@ -180,3 +183,8 @@ SUPABASE_SERVICE_ROLE_KEY=replace-with-your-supabase-service-role-key
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser; it bypasses RLS and
 must only live on the server (or in Netlify function environment variables).
+
+On Netlify, set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
+`PROFILE_LINK_SECRET` as site environment variables (read by the functions at
+runtime), plus `SUPABASE_ANON_KEY` (injected into `netlify/config.js` by the
+build). Only the anon key ever reaches the static site.

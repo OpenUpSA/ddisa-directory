@@ -31,15 +31,18 @@ test('netlify build connects to Supabase through config.js', async () => {
   );
 });
 
-test('netlify build disables write flows until the backend arrives', async () => {
+test('netlify build wires write flows to Netlify Functions', async () => {
   const html = await readFile(resolve(root, 'netlify', 'index.html'), 'utf8');
 
-  assert.ok(!html.includes('class="request-collaboration-button"'), 'No collaboration buttons in the static build.');
-  assert.ok(
-    !html.includes("open-add-organisation').hidden=false"),
-    'The add-organisation button must stay hidden without a write backend.',
-  );
-  assert.match(html, /Collaboration requests will be available/);
+  assert.match(html, /\/\.netlify\/functions\/access\?token=/);
+  assert.match(html, /\/\.netlify\/functions\/submissions/);
+  assert.match(html, /\/\.netlify\/functions\/collaboration-requests/);
+  assert.doesNotMatch(html, /\.\/api\//, 'No reference-server API URLs may remain.');
+  // Write UI is live again now that the functions exist.
+  assert.match(html, /class="request-collaboration-button"/);
+  assert.match(html, /\$\('open-add-organisation'\)\.hidden = false/);
+  assert.match(html, /await initialiseEditAccess\(\)/);
+  assert.match(html, /consentShared:\$\('collaboration-consent'\)\.checked/);
 });
 
 test('netlify config.js carries Supabase connection settings', async () => {

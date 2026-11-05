@@ -57,26 +57,35 @@ expiring links, and authentication can be added on top later.
 
 ## Deploy to Netlify
 
-`netlify/` is a self-contained static site: the Grantee Directory front-end
-with the embedded dataset removed, loading published profiles directly from
-Supabase with the anon key. No server required.
+The deploy has two parts:
 
-1. Run `npm run build:netlify`. It writes `netlify/index.html` and
-   `netlify/config.js` (placeholders unless environment variables are set).
-2. Either connect this repository to Netlify (`netlify.toml` builds and
-   publishes `netlify/` automatically) or drag-drop the `netlify/` folder.
-3. Set the environment variables in **Site settings → Environment variables**
-   so the build injects them into `config.js`:
-   - `SUPABASE_URL` — project URL from Supabase → Settings → API
-   - `SUPABASE_ANON_KEY` — the **anon/public** key (never the service-role key)
+- **`netlify/`** — the static site: the Grantee Directory front-end with the
+  embedded dataset removed, loading published profiles directly from Supabase
+  with the anon key.
+- **`functions/`** — the server-side write flows (edit links, submissions,
+  collaboration requests) running as Netlify Functions with the service-role
+  key.
 
-   Without a build step you can instead edit `netlify/config.js` by hand.
-4. Run `npm run upload:assets` once so the seeded `logo_path`/`photo_path`
-   values resolve to real objects in Supabase Storage.
+Connect this repository to Netlify (`netlify.toml` builds `netlify/` and
+registers `functions/` automatically), then set **Site settings →
+Environment variables**:
 
-Only published rows are readable from the browser (row-level security);
-submissions, edit links and collaboration requests stay disabled until the
-Supabase Auth and server-function work lands.
+| Variable | Used by | Purpose |
+|---|---|---|
+| `SUPABASE_URL` | build + functions | Project URL (Supabase → Settings → API) |
+| `SUPABASE_ANON_KEY` | build → `config.js` | Public read key for the browser |
+| `SUPABASE_SERVICE_ROLE_KEY` | functions only | Server-side writes; never shipped to the browser |
+| `PROFILE_LINK_SECRET` | functions | Verifies signed grantee edit links |
+
+Trigger a deploy so the build injects the anon key into `config.js`. Then run
+`npm run upload:assets` once from your machine so the seeded
+`logo_path`/`photo_path` values resolve to real objects in Supabase Storage.
+
+(Connecting the repo matters: drag-dropping `netlify/` gives you the read-only
+site only — the functions directory lives outside it.)
+
+Row-level security keeps the browser's anon key read-only; every write is
+validated inside a Netlify Function before it touches the database.
 
 ## Build the shareable files
 
@@ -97,21 +106,44 @@ npm run qa
 This validates source syntax, runs all automated tests and rebuilds both
 self-contained HTML files.
 
-## Generate a private edit link
+## Grantee profile editing
+
+Grantees edit their profile through a private, expiring link — no accounts:
 
 ```bash
-npm run invite -- "Digital Woman Uganda" 30
+PUBLIC_BASE_URL=https://ddisa.netlify.app npm run invite -- "Digital Woman Uganda" 30
 ```
 
-The edit link is valid for a limited number of days and permits edits only for
-the named organisation.
+The link is valid for the given number of days and permits edits only for the
+named organisation. How it holds together:
+
+- The token is an HMAC signature (keyed by `PROFILE_LINK_SECRET`) over the
+  organisation slug, an expiry and the organisation's current `token_version`.
+- The site validates it via `GET /.netlify/functions/access` and reveals
+  **Edit your organisation**. Publishes flow through
+  `POST /.netlify/functions/submissions`, which re-verifies the token,
+  validates every field server-side, uploads images to Storage, replaces the
+  profile rows and records an audit row in `submissions`.
+- **Revoke every outstanding link** for an organisation by bumping one column:
+  `update organisations set token_version = token_version + 1 where slug = '…';`
+- New organisations (the **Add your organisation** form) and collaboration
+  requests go through the same functions — rate limited per connection, with
+  the collaboration consent flag stored.
+
+Local full-stack testing: `npm start` (reference server, shared submission
+code) or `npx netlify dev` to run the real functions (needs netlify-cli).
+
+Not yet connected: e-mailing edit links automatically, collaboration
+notifications, Turnstile bot protection, Supabase Auth.
 
 ## Current reference implementation
 
-The included Node server stores review submissions in Supabase (or locally in
-preview mode) and protects grantee edit links with HMAC signatures. It
-validates Type of CSO, countries, offerings, contacts, resources, URLs and
-5 MB image limits before anything reaches the database.
+The included Node server mirrors the production write flows — direct
+publication in Supabase mode, a local review queue in preview mode — and
+protects grantee edit links with HMAC signatures. It validates Type of CSO,
+countries, offerings, contacts, resources, URLs and 5 MB image limits before
+anything reaches the database; the Netlify Functions share that exact code
+(`server/lib/submissions.mjs`).
 
 The agreed production architecture is Supabase with automatic publication.
 The adapter in `server/lib/supabase-store.mjs` implements the contract

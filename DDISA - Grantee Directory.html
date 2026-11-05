@@ -639,7 +639,8 @@ async function submitCollaborationRequest(event){
   senderName:$('collaboration-sender-name').value.trim(),
   senderEmail:$('collaboration-sender-email').value.trim(),
   collaborationType:$('collaboration-type').value,
-  message:$('collaboration-message').value.trim()
+  message:$('collaboration-message').value.trim(),
+  consentShared:$('collaboration-consent').checked
  };
  button.disabled=true;
  setFormStatus('collaboration-request-status','Sending collaboration request…','loading');

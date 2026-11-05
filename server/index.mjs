@@ -5,19 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { loadEnv } from './lib/env.mjs';
 import { SupabaseStore } from './lib/supabase-store.mjs';
 import { PreviewStore } from './lib/preview-store.mjs';
-import { verifyProfileToken } from './lib/tokens.mjs';
+import { verifyProfileToken, tokenMatchesOrganisation } from './lib/tokens.mjs';
+import { cleanImage } from './lib/validation.mjs';
 import {
-  cleanEmail,
-  cleanCsoTypes,
-  cleanContacts,
-  cleanCountry,
-  cleanImage,
-  cleanOfferings,
-  cleanResources,
-  cleanRegion,
-  cleanText,
-  cleanUrl,
-} from './lib/validation.mjs';
+  normaliseSubmission,
+  normaliseCollaborationRequest,
+  handleSubmit,
+} from './lib/submissions.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 loadEnv(root);
@@ -117,87 +111,6 @@ async function readJsonBody(request, limit = 30 * 1024 * 1024) {
   }
 }
 
-function normaliseSubmission(body, access) {
-  const requestType = access ? 'Profile update' : 'New organisation';
-  const organisationName = access?.name || cleanText(body.organisationName, {
-    label: 'Organisation name',
-    min: 2,
-    max: 180,
-    required: true,
-  });
-  const contactEmail = cleanEmail(body.contactEmail, true);
-
-  return {
-    requestType,
-    organisationId: access?.sub || '',
-    organisationName,
-    name: access?.name || cleanText(body.name || organisationName, {
-      label: 'Organisation name',
-      min: 2,
-      max: 180,
-      required: true,
-    }),
-    contactEmail,
-    publicEmail: contactEmail,
-    type: cleanCsoTypes(body.type),
-    offerings: cleanOfferings(body.offerings),
-    contacts: cleanContacts(body.contacts),
-    country: access ? '' : cleanCountry(body.country),
-    region: access ? '' : cleanRegion(body.region),
-    website: cleanUrl(body.website, 'Website'),
-    summary: cleanText(body.summary, {
-      label: 'Card introduction',
-      max: 240,
-      required: true,
-    }),
-    description: cleanText(body.description, {
-      label: 'Organisation description',
-      max: 5000,
-      required: true,
-    }),
-    collaboration: cleanText(body.collaboration, {
-      label: 'Open for collaboration',
-      max: 1200,
-    }),
-    resources: cleanResources(body.resources),
-    photoAlt: cleanText(body.photoAlt, {
-      label: 'Photo description',
-      max: 180,
-    }),
-  };
-}
-
-function normaliseCollaborationRequest(body) {
-  return {
-    recipientOrganisation: cleanText(body.recipientOrganisation, {
-      label: 'Recipient organisation',
-      max: 180,
-      required: true,
-    }),
-    senderOrganisation: cleanText(body.senderOrganisation, {
-      label: 'Your organisation',
-      max: 180,
-      required: true,
-    }),
-    senderName: cleanText(body.senderName, {
-      label: 'Your name',
-      max: 180,
-      required: true,
-    }),
-    senderEmail: cleanEmail(body.senderEmail, true),
-    collaborationType: cleanText(body.collaborationType, {
-      label: 'Collaboration type',
-      max: 100,
-      required: true,
-    }),
-    message: cleanText(body.message, {
-      label: 'Proposed collaboration',
-      max: 2000,
-      required: true,
-    }),
-  };
-}
-
 async function serveStatic(requestPath, response) {
   const requested = requestPath === '/' || requestPath === ''
     ? directoryFile
@@ -271,6 +184,12 @@ const server = createServer(async (request, response) => {
         sendJson(response, 404, { error: 'The organisation could not be found.' });
         return;
       }
+      if (!tokenMatchesOrganisation(payload, organisation)) {
+        sendJson(response, 401, {
+          error: 'This edit link has been revoked. Request a new link from DDISA.',
+        });
+        return;
+      }
       sendJson(response, 200, {
         organisationId: payload.sub,
         organisationName: organisation.name,
@@ -306,7 +225,20 @@ const server = createServer(async (request, response) => {
         error.status = 400;
         throw error;
       }
-      const submission = await store.createSubmission(payload, photo, logo);
+      if (access) {
+        const organisation = await store.findOrganisation(access.sub);
+        if (!organisation) {
+          sendJson(response, 404, { error: 'The organisation could not be found.' });
+          return;
+        }
+        if (!tokenMatchesOrganisation(access, organisation)) {
+          sendJson(response, 401, {
+            error: 'This edit link has been revoked. Request a new link from DDISA.',
+          });
+          return;
+        }
+      }
+      const submission = await handleSubmit(store, payload, photo, logo);
       sendJson(response, 201, {
         ok: true,
         message: 'Your update has been sent to DDISA for review.',
@@ -337,7 +269,7 @@ const server = createServer(async (request, response) => {
       await store.createCollaborationRequest(payload);
       sendJson(response, 201, {
         ok: true,
-        message: 'Your collaboration request has been sent.',
+        message: 'Your collaboration request has been received.',
       });
       return;
     }

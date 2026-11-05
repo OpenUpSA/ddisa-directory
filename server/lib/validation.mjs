@@ -53,6 +53,14 @@ export const CSO_TYPES = new Set([
   'Youth-focused',
 ]);
 
+/**
+ * Public organisation ID used in slugs and signed edit links.
+ * Must stay identical everywhere: front-end, invite script, seed, publish.
+ */
+export function slugify(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 export function cleanText(value, { label, min = 0, max = 5000, required = false }) {
   const text = typeof value === 'string' ? value.trim() : '';
   if (required && text.length < Math.max(1, min)) {
