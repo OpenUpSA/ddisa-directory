@@ -38,7 +38,10 @@ new-organisation form. Prototype submissions remain in the browser only.
 - The directory contains 46 Cohort 1 organisations.
 - Every organisation has a logo and complete summary/description.
 - Search, sort, region, country, focus-area, offering and Type of CSO filters
-  are supported.
+  are supported. The four sidebar filters are multi-select checkbox dropdowns:
+  values inside one filter are OR-ed, different filters are AND-ed, selections
+  live in `filterState` (synced by `syncFilterControl`) and are serialised into
+  the share-link hash as comma-separated lists.
 - Organisation cards show one short introduction and the counts of tools and
   services.
 - Profiles contain the full description, focus areas, offerings, collaboration
