@@ -99,9 +99,10 @@ the `assets/` directory.
 ## Organisation pages
 
 Every organisation has a standalone, shareable profile page at
-`/org/<slug>` — e.g. `/org/digital-woman-uganda`. The cards'
-**View full profile** links navigate there on the deployed site, and the
-page shows the same profile content as a full page with **Back to
+`/org/<slug>` — e.g. `/org/digital-woman-uganda`. Clicking an organisation
+card navigates there on the deployed site, while the card's **View** button
+opens the same profile in a quick-view modal. The page shows the same
+profile content as a full page with **Back to
 directory**, **Copy link** and (when signed in) **Edit your organisation**
 actions.
 

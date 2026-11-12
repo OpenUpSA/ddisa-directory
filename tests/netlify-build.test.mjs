@@ -90,7 +90,8 @@ test('organisation pages route to the SPA shell', async () => {
   const html = await readFile(resolve(root, 'netlify', 'index.html'), 'utf8');
   assert.match(html, /id="org-page"/, 'The standalone profile section must ship in the build.');
   assert.match(html, /parseOrgPagePath/, 'The front-end must parse /org/<slug> routes.');
-  assert.match(html, /href="\$\{orgPathFor\(slugFor\(d\)\)\}"/, 'Cards must link to organisation pages.');
+  assert.match(html, /data-slug="\$\{slugFor\(d\)\}"/, 'Cards must carry their organisation slug for page navigation.');
+  assert.match(html, /aria-label="Quick view: \$\{esc\(d\.name\)\}"/, 'View buttons must quick-view the profile modal.');
 });
 
 test('support desk ships as its own page with API redirects', async () => {

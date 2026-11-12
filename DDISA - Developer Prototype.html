@@ -19,6 +19,7 @@ aside select{appearance:none;-webkit-appearance:none;padding-right:38px;backgrou
 .section-top .add-organisation-button:hover{border-color:var(--ink);color:var(--ink)}
 .section-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-left:auto}
 #support-desk-link{text-decoration:none;display:inline-flex;align-items:center}
+#cards .card{cursor:pointer}
 .cso-picker{border:1px solid var(--line);border-radius:9px;padding:0 14px 14px;background:#f8fafc}
 .cso-picker legend{padding:0 6px;font-size:12px;font-weight:700}.cso-picker .required{color:#b33b31}
 .cso-picker-help{margin:0 0 11px;color:var(--muted);font-size:10px;line-height:1.5}
@@ -1095,9 +1096,18 @@ function render(sync=true){
  const rows=data.filter(matches).sort((a,b)=>$('sort').value==='az'?a.name.localeCompare(b.name):b.name.localeCompare(a.name));
  $('count').textContent=`Showing ${rows.length} of ${data.length} organisations`;
  $('empty').hidden=rows.length>0;
- $('cards').innerHTML=rows.map(d=>{const offerCount=offeringSummary(d);return `<article class="card"><div class="card-top">${logoMarkup(d)}<span class="region-tag">${esc(d.country)}, ${esc(d.region)}</span></div><h3>${esc(d.name)}</h3>${blurbPending(d)?'<p class="pending-copy">Organisation information is still pending confirmation.</p>':`${d.type.length?`<div class="location">◎ ${esc(d.type.join(' · '))}</div>`:''}<p>${esc(d.summary)}</p>`}<div class="card-bottom">${offerCount?`<span class="offer-summary">${offerCount}</span>`:''}<a class="view" href="${orgPathFor(slugFor(d))}" data-id="${data.indexOf(d)}" aria-label="View full profile: ${esc(d.name)}">View full profile <span>↗</span></a></div></article>`}).join('');
- $('cards').querySelectorAll('.view').forEach(link=>link.addEventListener('click',event=>{
-  if(demoOrModalProfile()){event.preventDefault();openProfile(Number(link.dataset.id))}
+ $('cards').innerHTML=rows.map(d=>{const offerCount=offeringSummary(d);return `<article class="card" data-slug="${slugFor(d)}"><div class="card-top">${logoMarkup(d)}<span class="region-tag">${esc(d.country)}, ${esc(d.region)}</span></div><h3>${esc(d.name)}</h3>${blurbPending(d)?'<p class="pending-copy">Organisation information is still pending confirmation.</p>':`${d.type.length?`<div class="location">◎ ${esc(d.type.join(' · '))}</div>`:''}<p>${esc(d.summary)}</p>`}<div class="card-bottom">${offerCount?`<span class="offer-summary">${offerCount}</span>`:''}<button class="view" data-id="${data.indexOf(d)}" aria-label="Quick view: ${esc(d.name)}">View</button></div></article>`}).join('');
+ $('cards').querySelectorAll('.view').forEach(button=>button.onclick=()=>openProfile(Number(button.dataset.id)));
+ $('cards').querySelectorAll('.card').forEach(card=>card.addEventListener('click',event=>{
+  if(event.target.closest('.view'))return;
+  const slug=card.dataset.slug;
+  if(!slug)return;
+  if(demoOrModalProfile()){
+   const index=data.findIndex(record=>slugFor(record)===slug);
+   if(index>=0)openProfile(index);
+   return;
+  }
+  location.href=orgPathFor(slug);
  }));
  const active=activeFiltersMarkup();
  $('active-filters').innerHTML=active;
@@ -1223,7 +1233,9 @@ async function initialiseEditAccess(){
  }catch(error){
   if(error.status===401){writeAuthSession(null);updateAuthButton()}
   editAccess=null;$('edit-profile').hidden=true;
-  setAlert('profile-alert',error.message,'error');
+  // Session errors must surface on the page when the profile dialog is
+  // closed (org pages and the directory root never show #profile-alert).
+  setAlert($('profile').open?'profile-alert':'app-alert',error.message,'error');
  }
  updateEditingControls();
 }
