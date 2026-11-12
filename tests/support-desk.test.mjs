@@ -114,7 +114,7 @@ test('production support requests create Trello, email and Slack records', async
   const fetchImpl = async (input, options = {}) => {
     const url = String(input);
     const method = options.method || 'GET';
-    calls.push({ url, method, body: options.body || '' });
+    calls.push({ url, method, body: options.body || '', headers: options.headers || {} });
 
     if (url.includes('/rest/v1/support_requests?request_id=eq.')) {
       return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -133,8 +133,8 @@ test('production support requests create Trello, email and Slack records', async
         shortUrl: 'https://trello.com/c/qa-card',
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
-    if (url === 'https://api.resend.com/emails') {
-      return new Response(JSON.stringify({ id: 'email-1' }), {
+    if (url.includes('/functions/v1/support-confirmation')) {
+      return new Response(JSON.stringify({ ok: true, messageId: 'email-1' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -156,9 +156,6 @@ test('production support requests create Trello, email and Slack records', async
       TRELLO_KEY: 'trello-key',
       TRELLO_TOKEN: 'trello-token',
       TRELLO_LIST_ID: 'trello-list',
-      RESEND_API_KEY: 'resend-key',
-      SUPPORT_EMAIL_FROM: 'support@ddisafund.org',
-      SUPPORT_EMAIL_REPLY_TO: 'support@ddisafund.org',
       SLACK_SUPPORT_WEBHOOK_URL: 'https://hooks.slack.example/support',
     },
   });
@@ -173,10 +170,13 @@ test('production support requests create Trello, email and Slack records', async
   assert.match(trello.url, /idList=trello-list/);
   assert.match(trello.url, /Support\+Request\+-\+OpenUp/);
 
-  const email = calls.find((call) => call.url === 'https://api.resend.com/emails');
+  const email = calls.find((call) => call.url.includes('/functions/v1/support-confirmation'));
+  assert.ok(email, 'the confirmation email must go through the support-confirmation edge function');
+  assert.match(String(email.headers.Authorization || ''), /^Bearer /);
   const emailPayload = JSON.parse(email.body);
-  assert.deepEqual(emailPayload.to, ['sihle@example.org']);
+  assert.equal(emailPayload.to, 'sihle@example.org');
   assert.match(emailPayload.subject, /DDISA-20261106-/);
+  assert.match(emailPayload.text, /Dear Sihle/);
 
   const slack = calls.find((call) => call.url === 'https://hooks.slack.example/support');
   assert.match(JSON.parse(slack.body).text, /https:\/\/trello.com\/c\/qa-card/);

@@ -276,14 +276,15 @@ export class SupportDeskService {
     this.supabaseBucket = env.SUPABASE_SUPPORT_BUCKET || 'support-attachments';
 
     if (this.mode === 'production') {
+      // Email delivery needs no server env: it runs through the
+      // `support-confirmation` Edge Function, which holds the Brevo secrets
+      // inside Supabase (BREVO_API_KEY, SUPPORT_EMAIL_FROM, ...).
       const required = [
         'SUPABASE_URL',
         'SUPABASE_SERVICE_ROLE_KEY',
         'TRELLO_KEY',
         'TRELLO_TOKEN',
         'TRELLO_LIST_ID',
-        'RESEND_API_KEY',
-        'SUPPORT_EMAIL_FROM',
         'SLACK_SUPPORT_WEBHOOK_URL',
       ];
       const missing = required.filter((key) => !env[key] || String(env[key]).startsWith('replace-'));
@@ -525,25 +526,33 @@ export class SupportDeskService {
   async sendConfirmationEmail(record) {
     const email = buildConfirmationEmail(record);
     try {
-      const response = await this.fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
+      // Confirmation email goes through the `support-confirmation` Supabase
+      // Edge Function (Brevo relay — script in
+      // supabase/functions/support-confirmation/index.ts). Authenticated with
+      // the service-role key; the function keeps JWT verification ON.
+      const response = await this.fetch(
+        `${this.supabaseUrl}/functions/v1/support-confirmation`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.supabaseKey}`,
+            apikey: this.supabaseKey,
+          },
+          body: JSON.stringify({
+            to: record.email,
+            subject: email.subject,
+            text: email.text,
+            html: email.html,
+          }),
+          signal: AbortSignal.timeout(20_000),
         },
-        body: JSON.stringify({
-          from: this.env.SUPPORT_EMAIL_FROM,
-          to: [record.email],
-          reply_to: this.env.SUPPORT_EMAIL_REPLY_TO || this.env.SUPPORT_EMAIL_FROM,
-          subject: email.subject,
-          text: email.text,
-          html: email.html,
-        }),
-        signal: AbortSignal.timeout(20_000),
-      });
+      );
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.message || `Email service returned ${response.status}.`);
-      return { status: 'sent', messageId: body.id || '' };
+      if (!response.ok) {
+        throw new Error(body.error || `Support email function returned ${response.status}.`);
+      }
+      return { status: 'sent', messageId: body.messageId || '' };
     } catch (error) {
       return { status: 'failed', error: error.message };
     }
@@ -571,7 +580,9 @@ export class SupportDeskService {
       mode: this.mode,
       supabase: Boolean(this.supabaseUrl && this.supabaseKey),
       trello: Boolean(this.env.TRELLO_KEY && this.env.TRELLO_TOKEN && this.env.TRELLO_LIST_ID),
-      email: Boolean(this.env.RESEND_API_KEY && this.env.SUPPORT_EMAIL_FROM),
+      // The confirmation email is sent by the support-confirmation Edge
+      // Function; this only reports that the backend can invoke it.
+      email: Boolean(this.supabaseUrl && this.supabaseKey),
       slack: Boolean(this.env.SLACK_SUPPORT_WEBHOOK_URL),
     };
   }

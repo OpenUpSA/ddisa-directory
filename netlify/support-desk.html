@@ -66,25 +66,27 @@
       color: inherit;
     }
 
-    .site-header {
+    /* Header rules copied verbatim from DDISA - Grantee Directory.html so
+       both pages share the exact same header (element selector + palette). */
+    header {
       height: 94px;
-      padding: 0 6%;
-      background: var(--ink);
+      border-bottom: 1px solid var(--line);
+      background: #061329;
       color: white;
-      border-bottom: 1px solid #1f2b3e;
+      border-color: #1f2b3e;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      padding: 0 6%;
     }
 
     .brand {
       display: flex;
-      align-items: center;
       gap: 12px;
-      color: white;
+      align-items: center;
       text-decoration: none;
-      font-size: 23px;
       font-weight: 800;
+      font-size: 23px;
       letter-spacing: 1px;
     }
 
@@ -100,16 +102,11 @@
       line-height: 1;
     }
 
-    .brand-copy {
-      display: block;
-    }
-
     .subbrand {
       display: block;
-      margin-top: 5px;
-      color: #c3cddd;
       font-size: 9px;
       letter-spacing: 2px;
+      margin-top: 5px;
     }
 
     .header-label {
@@ -117,15 +114,12 @@
       font-size: 12px;
     }
 
-    .standalone-label {
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 13px;
+    .private {
       border: 1px solid #4c5a70;
+      padding: 8px 13px;
       border-radius: 30px;
-      color: #e3eaf5;
       font-size: 11px;
-      white-space: nowrap;
+      color: #e3eaf5;
     }
 
     .hero {
@@ -873,10 +867,10 @@
   </style>
 </head>
 <body>
-  <header class="site-header">
-    <a class="brand" href="./"><span class="brandmark">d.</span><span class="brand-copy">DDISA<span class="subbrand">KNOWLEDGE HUB</span></span></a>
+  <header>
+    <a class="brand" href="./"><span class="brandmark">d.</span><span>DDISA<span class="subbrand">KNOWLEDGE HUB</span></span></a>
     <span class="header-label">People. Ideas. Collective impact.</span>
-    <span class="standalone-label">Support Desk</span>
+    <span class="private">Support Desk</span>
   </header>
 
   <section class="hero" aria-labelledby="page-title">

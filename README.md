@@ -134,11 +134,20 @@ The Support Desk is a standalone page served at **`/support-desk`**
   `.data/support-attachments/`. **Production mode**
   (`SUPPORT_DESK_MODE=production`) writes the `support_requests` table,
   uploads attachments to the private `support-attachments` bucket, creates a
-  Trello card, sends the confirmation email through Resend and posts to
+  Trello card, sends the confirmation email through the
+  `support-confirmation` Supabase Edge Function (Brevo — script in
+  `supabase/functions/support-confirmation/index.ts`) and posts to
   Slack — each outcome is recorded in the ticket's `integrations` JSON.
 - The table and bucket are created by `supabase/schema.sql` (section 12).
 - `GET /api/support/health` reports the current mode and which integrations
   are configured.
+
+Email delivery secrets are set **in Supabase only** (Edge Function secrets,
+not server/Netlify env):
+
+```bash
+supabase secrets set BREVO_API_KEY=... SUPPORT_EMAIL_FROM=... SUPPORT_EMAIL_REPLY_TO=...
+```
 
 Leave `SUPPORT_DESK_MODE` unset (or `preview`) until the Trello, Resend and
 Slack values are configured — production mode fails fast at startup when a
