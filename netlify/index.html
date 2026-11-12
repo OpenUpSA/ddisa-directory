@@ -1215,7 +1215,23 @@ async function hydrateDirectory() {
       offeringsByName[record.name] = record.offerings;
     });
     populateFilters();
-    applyStateFromHash();
+    // Mirrors the reference-server hydrate: legacy #?profile= links become
+    // /org/<slug> URLs, and org pages render here - otherwise the page sits
+    // on the loading placeholder forever. NOTE: findExpression parses this
+    // block as data and does not skip comments, so keep quotes and
+    // apostrophes OUT of any comment inside hydrateDirectory.
+    if (!orgPageSlug && legacyProfileName) {
+      const legacy = data.find((record) => record.name === legacyProfileName);
+      if (legacy) {
+        location.replace(orgPathFor(slugFor(legacy)));
+        return;
+      }
+    }
+    if (orgPageSlug) {
+      renderOrgPage();
+    } else {
+      applyStateFromHash();
+    }
     const source = 'Live directory';
     document.querySelector('.private').textContent = source;
     document.querySelector('.private').title = source;
@@ -1224,6 +1240,14 @@ async function hydrateDirectory() {
     $('open-add-organisation').hidden = false;
   } catch (error) {
     console.warn('Supabase directory unavailable.', error);
+    if (orgPageSlug) {
+      if (data.length) {
+        renderOrgPage();
+      } else {
+        document.getElementById('org-page-content').innerHTML =
+          '<div class="org-page-missing"><h1>Profile unavailable</h1><p>The directory could not be loaded right now. Please try again shortly.</p><a href="/">← Back to directory</a></div>';
+      }
+    }
     setAlert(
       'app-alert',
       'The directory could not be loaded from Supabase right now. Please try again shortly.',

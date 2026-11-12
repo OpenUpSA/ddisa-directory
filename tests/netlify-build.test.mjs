@@ -106,3 +106,13 @@ test('support desk ships as its own page with API redirects', async () => {
   assert.match(toml, /from = "\/support-desk"/);
   assert.match(toml, /to = "\/\.netlify\/functions\/support-requests"/);
 });
+
+test('netlify runtime renders organisation pages after hydration', async () => {
+  // The Netlify build swaps the reference hydrateDirectory for this runtime —
+  // if it never calls renderOrgPage, /org/<slug> pages sit on "Loading
+  // profile…" forever (live regression, 2026-11-12).
+  const runtime = await readFile(resolve(root, 'scripts', 'netlify-runtime.js'), 'utf8');
+  assert.match(runtime, /if \(orgPageSlug\) \{\s*renderOrgPage\(\);/);
+  assert.match(runtime, /legacyProfileName/, 'Legacy #?profile= links must redirect on Netlify too.');
+  assert.match(runtime, /Profile unavailable/, 'Org pages need a failure fallback, not a spinner.');
+});
