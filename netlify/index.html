@@ -53,6 +53,24 @@ aside select{appearance:none;-webkit-appearance:none;padding-right:38px;backgrou
 .filter-option input{flex:none;width:13px;height:13px;margin:1px 0 0;accent-color:var(--green)}
 .filter-options-clear{display:block;width:100%;margin-top:4px;padding:8px 8px 5px;border:0;border-top:1px solid var(--line);background:none;color:var(--green);font-size:10px;font-weight:700;text-align:left}
 .filter-options-clear[hidden]{display:none}
+/* Sign-in dialog: focused modal with a full-bleed header and a tight
+   two-step (code request → verify) rhythm. Overrides the generic dialog
+   padding/width and the warning-box look of .editor-note. */
+#signin-form{width:min(440px,calc(100% - 32px));padding:0}
+#signin-form .profile-topbar{padding:15px 22px}
+#signin-form .profile-editor-title{font-size:22px;letter-spacing:-.01em}
+#signin-form form{padding:0 26px 26px;max-height:calc(88vh - 58px);overflow-y:auto}
+#signin-form .editor-section{margin-top:16px}
+#signin-form .editor-section:first-child{margin-top:16px}
+#signin-form .editor-note{margin-top:0;background:#f0f5f9;border:1px solid #d9e4ee;color:#41556b;font-size:12px}
+#signin-form .editor-section label{display:block;font-size:12px;font-weight:700}
+#signin-form .editor-section input{width:100%;border:1px solid var(--line);border-radius:7px;padding:12px;margin-top:7px;font:inherit;color:var(--ink);background:white}
+#signin-form .editor-section input:focus-visible{outline:none;border-color:var(--green);box-shadow:0 0 0 2px #007e7033}
+#signin-form #signin-code{text-align:center;letter-spacing:.4em;font-size:18px;font-weight:700}
+#signin-form .editor-status{margin:0;min-height:0}
+#signin-form .editor-status:empty{display:none}
+#signin-form #signin-submit{width:100%;padding:13px;font-size:13px}
+#signin-form #signin-submit:disabled{opacity:.65;cursor:default}
 </style></head><body>
 <header><a class="brand" href="./"><span class="brandmark">d.</span><span>DDISA<span class="subbrand">KNOWLEDGE HUB</span></span></a><span class="header-label">People. Ideas. Collective impact.</span><span class="private">Cohort 1 directory</span></header>
 <main>
@@ -213,7 +231,7 @@ function updateAuthButton(){
 }
 function ensureSignInDialog(){
  if($('signin-form'))return;
- document.body.insertAdjacentHTML('beforeend','<dialog id="signin-form"><div class="profile-topbar"><h2 class="profile-editor-title">Grantee sign in</h2><button id="signin-close" class="close" aria-label="Close sign-in" type="button">×</button></div><form id="signin-fields"><div class="editor-section"><p class="editor-note">No password needed: enter your email and we’ll send you a sign-in code — or click the link in the email to sign in straight away.</p></div><div class="editor-section"><label for="signin-email">Email<input id="signin-email" type="email" autocomplete="username" maxlength="254" required placeholder="name@organisation.org"></label></div><div class="editor-section" id="signin-code-row" hidden><label for="signin-code">Sign-in code<input id="signin-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="The code from your email"></label></div><div class="editor-section"><div class="editor-status" id="signin-status"></div></div><div class="editor-section"><button class="editor-primary" type="submit" id="signin-submit">Email me a code</button></div></form></dialog>');
+ document.body.insertAdjacentHTML('beforeend','<dialog id="signin-form"><div class="profile-topbar"><h2 class="profile-editor-title">Grantee sign in</h2><button id="signin-close" class="close" aria-label="Close sign-in" type="button">×</button></div><form id="signin-fields"><div class="editor-section"><p class="editor-note">Enter your email and we’ll send you a 6-digit sign-in code — or click the link in the email to sign in instantly. No password needed.</p></div><div class="editor-section"><label for="signin-email">Email<input id="signin-email" type="email" autocomplete="username" maxlength="254" required placeholder="name@organisation.org"></label></div><div class="editor-section" id="signin-code-row" hidden><label for="signin-code">Sign-in code<input id="signin-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456"></label></div><div class="editor-section"><div class="editor-status" id="signin-status"></div></div><div class="editor-section"><button class="editor-primary" type="submit" id="signin-submit">Email me a code</button></div></form></dialog>');
  $('signin-close').addEventListener('click',()=>$('signin-form').close());
  $('signin-email').addEventListener('input',()=>{
   if(otpSentTo&&$('signin-email').value.trim()!==otpSentTo){
