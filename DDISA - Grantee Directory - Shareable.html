@@ -221,26 +221,79 @@ async function getAccessToken(){
   return readAuthSession().access_token;
  }catch{return null}
 }
-async function signIn(email,password){
+let otpSentTo='';
+async function requestSignInCode(email){
  const config=await loadSupabaseConfig();
  if(!config||!config.url||!config.anonKey)throw new Error('Directory sign-in is not configured for this deployment yet.');
  let response;
  try{
-  response=await fetch(`${config.url}/auth/v1/token?grant_type=password`,{
+  response=await fetch(`${config.url}/auth/v1/otp`,{
    method:'POST',
    headers:{'Content-Type':'application/json',apikey:config.anonKey},
-   body:JSON.stringify({email,password})
+   body:JSON.stringify({email,create_user:false})
   });
  }catch{throw new Error('We could not reach the sign-in service. Check your connection and try again.')}
- const result=await response.json().catch(()=>({}));
- if(!response.ok)throw new Error(result.error_description||result.msg||'Email or password not recognised.');
- writeAuthSession({access_token:result.access_token,refresh_token:result.refresh_token,expires_at:Date.now()+Number(result.expires_in||3600)*1000,email:result.user?.email||email});
- updateAuthButton();
+ if(!response.ok){
+  const result=await response.json().catch(()=>({}));
+  const detail=`${result.msg||''} ${result.error_description||''} ${result.error_code||''}`;
+  if(response.status===429)throw new Error('Too many sign-in requests. Wait a few minutes and try again.');
+  if(/user[_ ]not[_ ]found/i.test(detail))throw new Error('No sign-in account exists for that address yet. Ask DDISA to set you up.');
+  throw new Error('The sign-in email could not be sent. Try again shortly.');
+ }
+ otpSentTo=email;
+}
+async function verifySignInCode(email,code){
+ const config=await loadSupabaseConfig();
+ if(!config||!config.url||!config.anonKey)throw new Error('Directory sign-in is not configured for this deployment yet.');
+ let lastResult=null;let lastStatus=0;
+ // GoTrue stores emailed codes as verify type "email"; older projects
+ // expect "magiclink" — try both so either template/version works.
+ for(const type of ['email','magiclink']){
+  let response;
+  try{
+   response=await fetch(`${config.url}/auth/v1/verify`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json',apikey:config.anonKey},
+    body:JSON.stringify({type,email,token:code})
+   });
+  }catch{throw new Error('We could not reach the sign-in service. Check your connection and try again.')}
+  lastStatus=response.status;
+  lastResult=await response.json().catch(()=>({}));
+  if(response.ok){
+   writeAuthSession({access_token:lastResult.access_token,refresh_token:lastResult.refresh_token,expires_at:Date.now()+Number(lastResult.expires_in||3600)*1000,email:lastResult.user?.email||email});
+   otpSentTo='';
+   updateAuthButton();
+   return;
+  }
+  if(response.status===429)break;
+ }
+ const detail=`${lastResult?.msg||''} ${lastResult?.error_description||''} ${lastResult?.error_code||''}`;
+ if(lastStatus===429)throw new Error('Too many sign-in attempts. Wait a few minutes and try again.');
+ if(/expired/i.test(detail))throw new Error('That code has expired. Send a new one.');
+ if(/invalid|does not match|not correct/i.test(detail))throw new Error('That code is not correct. Check the email and try again.');
+ throw new Error('That code could not be verified. Send a new code and try again.');
 }
 function signOut(){
  writeAuthSession(null);
  editAccess=null;$('edit-profile').hidden=true;
  updateAuthButton();
+}
+function captureAuthRedirect(){
+ if(!databaseOnline||!location.hash)return;
+ const params=new URLSearchParams(location.hash.slice(1));
+ if(params.get('error')){
+  setAlert('app-alert',params.get('error_description')||params.get('error')||'Sign-in was cancelled.','error');
+  history.replaceState(null,'',location.pathname+location.search);
+  return;
+ }
+ const access=params.get('access_token');
+ const refresh=params.get('refresh_token');
+ if(!access||!refresh)return;
+ // Magic-link click: GoTrue redirected back with the session in the URL
+ // fragment. Store it and strip the tokens from the address bar before the
+ // app reads the hash for its own filter/profile state.
+ writeAuthSession({access_token:access,refresh_token:refresh,expires_at:Date.now()+Number(params.get('expires_in')||3600)*1000,email:''});
+ history.replaceState(null,'',location.pathname+location.search);
 }
 function updateAuthButton(){
  const button=$('auth-button');if(!button)return;
@@ -250,25 +303,51 @@ function updateAuthButton(){
 }
 function ensureSignInDialog(){
  if($('signin-form'))return;
- document.body.insertAdjacentHTML('beforeend','<dialog id="signin-form"><div class="profile-topbar"><h2 class="profile-editor-title">Grantee sign in</h2><button id="signin-close" class="close" aria-label="Close sign-in" type="button">×</button></div><form id="signin-fields"><div class="editor-section"><p class="editor-note">Sign in with the account DDISA set up for your organisation to edit your public profile.</p></div><div class="editor-section"><label for="signin-email">Email<input id="signin-email" type="email" autocomplete="username" maxlength="254" required placeholder="name@organisation.org"></label></div><div class="editor-section"><label for="signin-password">Password<input id="signin-password" type="password" autocomplete="current-password" required></label></div><div class="editor-section"><div class="editor-status" id="signin-status"></div></div><div class="editor-section"><button class="editor-primary" type="submit">Sign in</button></div></form></dialog>');
+ document.body.insertAdjacentHTML('beforeend','<dialog id="signin-form"><div class="profile-topbar"><h2 class="profile-editor-title">Grantee sign in</h2><button id="signin-close" class="close" aria-label="Close sign-in" type="button">×</button></div><form id="signin-fields"><div class="editor-section"><p class="editor-note">No password needed: enter your email and we’ll send you a sign-in code — or click the link in the email to sign in straight away.</p></div><div class="editor-section"><label for="signin-email">Email<input id="signin-email" type="email" autocomplete="username" maxlength="254" required placeholder="name@organisation.org"></label></div><div class="editor-section" id="signin-code-row" hidden><label for="signin-code">Sign-in code<input id="signin-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="The code from your email"></label></div><div class="editor-section"><div class="editor-status" id="signin-status"></div></div><div class="editor-section"><button class="editor-primary" type="submit" id="signin-submit">Email me a code</button></div></form></dialog>');
  $('signin-close').addEventListener('click',()=>$('signin-form').close());
+ $('signin-email').addEventListener('input',()=>{
+  if(otpSentTo&&$('signin-email').value.trim()!==otpSentTo){
+   otpSentTo='';$('signin-code-row').hidden=true;$('signin-code').value='';
+   $('signin-submit').textContent='Email me a code';
+   setFormStatus('signin-status','','');
+  }
+ });
  $('signin-fields').addEventListener('submit',async event=>{
   event.preventDefault();
   const button=event.target.querySelector('button[type="submit"]');
+  const email=$('signin-email').value.trim();
   button.disabled=true;
-  setFormStatus('signin-status','Signing in…','loading');
   try{
-   await signIn($('signin-email').value.trim(),$('signin-password').value);
-   setFormStatus('signin-status','','');
-   $('signin-form').close();
-   await initialiseEditAccess();
-   setAlert('app-alert',editAccess?'Signed in. Open your organisation profile and choose “Edit your organisation”.':'Signed in, but this account is not linked to an organisation yet. Ask DDISA to connect it.',editAccess?'info':'error');
+   if($('signin-code-row').hidden){
+    setFormStatus('signin-status','Sending your sign-in code…','loading');
+    await requestSignInCode(email);
+    $('signin-code-row').hidden=false;
+    button.textContent='Verify code & sign in';
+    setFormStatus('signin-status',`Code sent to ${email}. Enter it below — or click the link in the email to sign in without a code.`,'success');
+    $('signin-code').focus();
+   }else{
+    const code=$('signin-code').value.trim();
+    if(!code){setFormStatus('signin-status','Enter the code from your email.','error');return}
+    setFormStatus('signin-status','Verifying…','loading');
+    await verifySignInCode(email,code);
+    setFormStatus('signin-status','','');
+    $('signin-form').close();
+    await initialiseEditAccess();
+    setAlert('app-alert',editAccess?'Signed in. Open your organisation profile and choose “Edit your organisation”.':'Signed in, but this account is not linked to an organisation yet. Ask DDISA to connect it.',editAccess?'info':'error');
+   }
   }catch(error){
    setFormStatus('signin-status',error.message,'error');
   }finally{button.disabled=false}
  });
 }
-function openSignIn(){ensureSignInDialog();setFormStatus('signin-status','','');$('signin-form').showModal();}
+function openSignIn(){
+ ensureSignInDialog();
+ otpSentTo='';$('signin-code-row').hidden=true;$('signin-code').value='';
+ $('signin-submit').textContent='Email me a code';
+ setFormStatus('signin-status','','');
+ $('signin-form').showModal();
+ $('signin-email').focus();
+}
 const focusGroups={
  'Civic participation & democracy':['Digital civic participation & citizen engagement','Electoral integrity & voter education','Youth civic engagement & digital technology'],
  'Transparency & access to information':['Transparency & open data','Access to information & digital inclusion'],
@@ -994,6 +1073,8 @@ async function initialiseEditAccess(){
    throw error;
   }
   editAccess=result;
+  const storedSession=readAuthSession();
+  if(storedSession&&!storedSession.email&&result.email){storedSession.email=result.email;writeAuthSession(storedSession);updateAuthButton()}
   setAlert('profile-alert','','');
   if(activeProfileIndex!==null)openProfile(activeProfileIndex,false);
  }catch(error){
@@ -1121,6 +1202,7 @@ document.addEventListener('click',event=>{
 $('auth-button').addEventListener('click',()=>{readAuthSession()?signOut():openSignIn()});
 window.addEventListener('hashchange',applyStateFromHash);
 ensureAlerts();
+captureAuthRedirect();
 updateAuthButton();
 $('auth-button').hidden=!databaseOnline;
 applyStateFromHash();

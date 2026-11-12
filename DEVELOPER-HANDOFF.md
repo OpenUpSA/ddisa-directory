@@ -14,11 +14,12 @@ The final product decisions are:
 - Use Supabase for published directory data and organisation submissions.
 - Publish approved profile edits automatically after server-side validation.
 - Let organisations request collaboration from another organisation's profile.
-- Avoid organisation accounts and passwords by using private, expiring edit
-  links.
+- Let organisations edit their profile through a passwordless Supabase Auth
+  sign-in (email one-time code or magic link) linked via `organisations.owner_id`
+  — no shared passwords, no expiring links.
 
 The included Node server is a local reference implementation with a Supabase
-adapter. It remains useful for testing validation and edit-link behaviour, but
+adapter. It remains useful for testing validation and sign-in behaviour, but
 its review queue is not the target production workflow.
 
 ## Files to review
@@ -67,16 +68,22 @@ Images accept JPEG, PNG or WebP and are limited to 5 MB per file. The current
 reference server validates file size again and does not trust browser checks.
 
 Profile editing requires a Supabase Auth user linked to the organisation
-(`organisations.owner_id`). Create the user in Supabase → Authentication,
-then link it:
+(`organisations.owner_id`). Create the user in Supabase → Authentication
+(email only — sign-in is passwordless: emailed one-time code or magic link,
+no password set), then link it:
 
 ```sql
 update organisations set owner_id = '<auth-user-uuid>' where slug = 'digital-woman-uganda';
 ```
 
-The grantee signs in from the directory (or opens `?edit`) and the front-end
-keeps the session in `localStorage`, sending `Authorization: Bearer <jwt>` on
-every editing request.
+The grantee signs in from the directory (or opens `?edit`): the dialog
+requests a code via `POST /auth/v1/otp` and verifies it against
+`POST /auth/v1/verify`, or the grantee clicks the magic link and the
+redirected session is captured from the URL fragment. The front-end keeps
+the session in `localStorage`, sending `Authorization: Bearer <jwt>` on
+every editing request. Requires the Magic Link email template to include
+`{{ .Token }}` for the code path, and the correct Site URL / Redirect URLs
+under Authentication → URL Configuration for the link path.
 
 ## New-organisation workflow
 

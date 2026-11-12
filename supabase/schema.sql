@@ -61,23 +61,26 @@ create table if not exists public.organisations (
   updated_at        timestamptz not null default now()
 );
 
+-- Keeps databases created before logo backgrounds existed in step with this file.
+alter table public.organisations
+  add column if not exists logo_background text not null default '';
+
+-- Migration for databases created before Supabase Auth replaced edit links:
+-- add the owner column and retire the token revocation counter. These run
+-- BEFORE the indexes below, so re-running this file on an existing database
+-- works: the create table is skipped there and owner_id does not exist yet
+-- until this ALTER adds it. (A fresh create table already includes both.)
+alter table public.organisations
+  add column if not exists owner_id uuid references auth.users (id) on delete set null;
+alter table public.organisations
+  drop column if exists token_version;
+
 create index if not exists organisations_publication_status_idx
   on public.organisations (publication_status);
 create index if not exists organisations_owner_idx
   on public.organisations (owner_id);
 create index if not exists organisations_country_idx on public.organisations (country);
 create index if not exists organisations_region_idx on public.organisations (region);
-
--- Keeps databases created before logo backgrounds existed in step with this file.
-alter table public.organisations
-  add column if not exists logo_background text not null default '';
-
--- Migration for databases created before Supabase Auth replaced edit links:
--- add the owner column and retire the token revocation counter.
-alter table public.organisations
-  add column if not exists owner_id uuid references auth.users (id) on delete set null;
-alter table public.organisations
-  drop column if exists token_version;
 
 -- ----------------------------------------------------------------------------
 -- 2. Type of CSO (one row per organisation and type)

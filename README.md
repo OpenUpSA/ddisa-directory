@@ -108,20 +108,33 @@ self-contained HTML files.
 ## Grantee profile editing
 
 Grantees edit their profile by signing in with a Supabase Auth account — no
-expiring links:
+expiring links, no passwords (email code / magic link):
 
 1. Create a user in Supabase → **Authentication → Users → Add user** (email
-   + password; disable "Auto Confirm" if you want to vet sign-ups).
+   only — no password needed; disable "Auto Confirm" if you want to vet
+   sign-ups).
 2. Link that user to one organisation:
    `update organisations set owner_id = '<auth-user-uuid>' where slug = '…';`
 3. Send the grantee your site URL with `?edit` (e.g.
    `https://ddisa.netlify.app/?edit`) — or they click **Grantee sign in** in
    the directory header.
 
+One-time Supabase Auth setup:
+
+- **Authentication → Email Templates → Magic Link**: include `{{ .Token }}`
+  in the template so the email shows a 6-digit code the grantee can type into
+  the sign-in dialog (the default template only has a link — clicking that
+  works too; both paths are supported).
+- **Authentication → URL Configuration**: set *Site URL* to your deployed
+  origin (e.g. `https://ddisa.netlify.app`) and add `http://localhost:3000`
+  under Redirect URLs for local development — this is where magic links
+  send the browser back.
+
 How it holds together:
 
-- The browser signs in against Supabase GoTrue (email + password) and keeps
-  the session in `localStorage`, refreshing the JWT automatically.
+- The browser requests a one-time code from Supabase GoTrue
+  (`POST /auth/v1/otp`) or the grantee clicks the emailed magic link; either
+  way the session lands in `localStorage`, refreshing the JWT automatically.
 - Every editing request carries `Authorization: Bearer <jwt>`. The site
   validates it via `GET /.netlify/functions/access` and reveals
   **Edit your organisation** for the organisation linked through
