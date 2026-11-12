@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { loadEnv } from './lib/env.mjs';
 import { SupabaseStore } from './lib/supabase-store.mjs';
 import { PreviewStore } from './lib/preview-store.mjs';
-import { verifyProfileToken, tokenMatchesOrganisation } from './lib/tokens.mjs';
+import { editorFromRequest } from './lib/auth.mjs';
 import { cleanImage } from './lib/validation.mjs';
 import {
   normaliseSubmission,
@@ -22,9 +22,10 @@ const hasSupabaseEnv = Boolean(
 );
 const mode = process.env.DB_MODE || (hasSupabaseEnv ? 'supabase' : 'preview');
 const directoryFile = process.env.DIRECTORY_FILE || 'DDISA - Grantee Directory.html';
-const tokenSecret =
-  process.env.PROFILE_LINK_SECRET ||
-  (mode === 'preview' ? 'local-preview-secret-change-before-deploying' : '');
+// Anon key identifies the project when confirming user sessions with GoTrue;
+// never the service-role key (and never sent to the browser from here).
+const supabaseApiKey =
+  process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 if (!['supabase', 'preview'].includes(mode)) {
   throw new Error('DB_MODE must be either "supabase" or "preview".');
@@ -36,10 +37,6 @@ if (mode === 'supabase') {
     }
   }
 }
-if (!tokenSecret) {
-  throw new Error('PROFILE_LINK_SECRET must be configured.');
-}
-
 const store =
   mode === 'supabase'
     ? new SupabaseStore({
@@ -173,28 +170,34 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (request.method === 'GET' && url.pathname === '/api/access') {
-      const payload = verifyProfileToken(url.searchParams.get('token'), tokenSecret);
-      if (!payload) {
-        sendJson(response, 401, { error: 'This edit link is invalid or has expired.' });
-        return;
-      }
-      const organisation = await store.findOrganisation(payload.sub);
-      if (!organisation) {
-        sendJson(response, 404, { error: 'The organisation could not be found.' });
-        return;
-      }
-      if (!tokenMatchesOrganisation(payload, organisation)) {
-        sendJson(response, 401, {
-          error: 'This edit link has been revoked. Request a new link from DDISA.',
-        });
-        return;
-      }
+    if (request.method === 'GET' && url.pathname === '/api/config') {
       sendJson(response, 200, {
-        organisationId: payload.sub,
-        organisationName: organisation.name,
-        expiresAt: new Date(payload.exp * 1000).toISOString(),
+        supabaseUrl: mode === 'supabase' ? process.env.SUPABASE_URL : '',
+        supabaseAnonKey: mode === 'supabase' ? process.env.SUPABASE_ANON_KEY || '' : '',
       });
+      return;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/access') {
+      try {
+        const editor = await editorFromRequest({
+          authorization: request.headers.authorization,
+          baseUrl: mode === 'supabase' ? process.env.SUPABASE_URL : '',
+          apiKey: supabaseApiKey,
+          store,
+        });
+        if (!editor) {
+          sendJson(response, 401, { error: 'Sign in to edit your organisation.' });
+          return;
+        }
+        sendJson(response, 200, {
+          organisationId: editor.organisation.slug,
+          organisationName: editor.organisation.name,
+          email: editor.user.email,
+        });
+      } catch (error) {
+        sendJson(response, error.status || 500, { error: error.message });
+      }
       return;
     }
 
@@ -205,13 +208,20 @@ const server = createServer(async (request, response) => {
       }
 
       const body = await readJsonBody(request);
+      // A Bearer header means "editing my organisation"; no header means a
+      // public, anonymous new-organisation submission.
       let access = null;
-      if (body.accessToken) {
-        access = verifyProfileToken(body.accessToken, tokenSecret);
-        if (!access) {
-          sendJson(response, 401, { error: 'This edit link is invalid or has expired.' });
-          return;
-        }
+      try {
+        const editor = await editorFromRequest({
+          authorization: request.headers.authorization,
+          baseUrl: mode === 'supabase' ? process.env.SUPABASE_URL : '',
+          apiKey: supabaseApiKey,
+          store,
+        });
+        access = editor ? editor.access : null;
+      } catch (error) {
+        sendJson(response, error.status || 500, { error: error.message });
+        return;
       }
 
       let payload;
@@ -224,19 +234,6 @@ const server = createServer(async (request, response) => {
       } catch (error) {
         error.status = 400;
         throw error;
-      }
-      if (access) {
-        const organisation = await store.findOrganisation(access.sub);
-        if (!organisation) {
-          sendJson(response, 404, { error: 'The organisation could not be found.' });
-          return;
-        }
-        if (!tokenMatchesOrganisation(access, organisation)) {
-          sendJson(response, 401, {
-            error: 'This edit link has been revoked. Request a new link from DDISA.',
-          });
-          return;
-        }
       }
       const submission = await handleSubmit(store, payload, photo, logo);
       sendJson(response, 201, {

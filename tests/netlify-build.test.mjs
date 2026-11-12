@@ -34,7 +34,8 @@ test('netlify build connects to Supabase through config.js', async () => {
 test('netlify build wires write flows to Netlify Functions', async () => {
   const html = await readFile(resolve(root, 'netlify', 'index.html'), 'utf8');
 
-  assert.match(html, /\/\.netlify\/functions\/access\?token=/);
+  assert.match(html, /\/\.netlify\/functions\/access/);
+  assert.match(html, /\/\.netlify\/functions\/config/);
   assert.match(html, /\/\.netlify\/functions\/submissions/);
   assert.match(html, /\/\.netlify\/functions\/collaboration-requests/);
   assert.doesNotMatch(html, /\.\/api\//, 'No reference-server API URLs may remain.');
@@ -60,11 +61,12 @@ test('modules bundled into functions avoid import.meta (breaks Netlify CJS bundl
   const bundled = [
     'server/lib/function-kit.mjs',
     'server/lib/submissions.mjs',
-    'server/lib/tokens.mjs',
+    'server/lib/auth.mjs',
     'server/lib/validation.mjs',
     'server/lib/supabase-store.mjs',
     'server/lib/env.mjs',
     'functions/access.mjs',
+    'functions/config.mjs',
     'functions/submissions.mjs',
     'functions/collaboration-requests.mjs',
     'functions/health.mjs',

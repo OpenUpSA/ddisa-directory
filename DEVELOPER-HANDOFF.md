@@ -4,7 +4,7 @@
 
 This package contains the QA-reviewed directory prototype and its reference
 server, plus the Supabase production backend: schema + seed, the static
-Netlify site, and Netlify Functions for edit links, submissions and
+Netlify site, and Netlify Functions for grantee sign-in, submissions and
 collaboration requests. Automatic edit-link email delivery and
 collaboration-request notifications are not yet connected.
 
@@ -66,14 +66,17 @@ The editor supports:
 Images accept JPEG, PNG or WebP and are limited to 5 MB per file. The current
 reference server validates file size again and does not trust browser checks.
 
-Generate a local edit link with:
+Profile editing requires a Supabase Auth user linked to the organisation
+(`organisations.owner_id`). Create the user in Supabase → Authentication,
+then link it:
 
-```bash
-npm run invite -- "Digital Woman Uganda" 30
+```sql
+update organisations set owner_id = '<auth-user-uuid>' where slug = 'digital-woman-uganda';
 ```
 
-The number is the link lifetime in days. Changing `PROFILE_LINK_SECRET`
-invalidates all previously issued links.
+The grantee signs in from the directory (or opens `?edit`) and the front-end
+keeps the session in `localStorage`, sending `Authorization: Bearer <jwt>` on
+every editing request.
 
 ## New-organisation workflow
 
@@ -124,34 +127,37 @@ Tables:
   status.
 - `submissions` — the review queue: request type, organisation reference,
   the validated payload as JSONB, uploaded image paths and review status.
-- A token-version field on each organisation so existing edit links can be
-  revoked.
+- `organisations.owner_id` — the Supabase Auth user allowed to edit the
+  profile (null = nobody). Delete the user or clear the column to revoke
+  access.
 
 Use Supabase Storage buckets for organisation logos and organisation photos.
 Keep bucket and database write operations behind a server function using a
 service-role key. Do not expose service-role credentials to the browser.
 
 Public access should be limited to published organisations and published
-resources. Editing and collaboration endpoints must validate signed tokens and
-all incoming fields on the server before writing.
+resources. Editing and collaboration endpoints must verify the Supabase Auth
+session and all incoming fields on the server before writing.
 
 ## Required production work
 
 Done in this package: the Supabase schema, RLS and buckets
 (`supabase/schema.sql`); the 46-record seed and asset upload
-(`supabase/seed.sql`, `npm run upload:assets`); signed edit-link validation
-with revocation via `organisations.token_version`; direct profile and
+(`supabase/seed.sql`, `npm run upload:assets`); Supabase Auth session
+validation for organisation editing (`server/lib/auth.mjs` +
+`organisations.owner_id`); direct profile and
 new-organisation publication with server-side validation and duplicate
 checking; and the Netlify deployment (static site + `functions/`).
 
 Remaining:
 
-1. Email delivery: send new organisations their private edit link and notify
-   collaboration-request recipients.
+1. Email delivery: notify collaboration-request recipients (and confirm
+   new-organisation sign-ups if Supabase auto-confirm stays off).
 2. Retention and deletion handling for collaboration messages (the consent
    flag is captured on submit).
 3. Turnstile/CAPTCHA bot protection and durable (cross-instance) rate limits.
-4. Optional Supabase Auth for organisation sign-in alongside edit links.
+4. Optional self-service claiming: let a grantee link their own account to
+   their organisation instead of an admin running the SQL update.
 
 ## Reference API
 
@@ -159,7 +165,8 @@ The local Node server exposes:
 
 - `GET /api/health`
 - `GET /api/directory`
-- `GET /api/access?token=...`
+- `GET /api/config` — public Supabase URL + anon key for the sign-in UI
+- `GET /api/access` — `Authorization: Bearer <jwt>` → linked organisation
 - `POST /api/submissions`
 - `POST /api/collaboration-requests`
 
@@ -172,8 +179,6 @@ The included reference server expects values in `.env`. Never commit real
 secrets.
 
 ```dotenv
-PUBLIC_BASE_URL=https://directory.example.org
-PROFILE_LINK_SECRET=replace-with-at-least-32-random-characters
 PORT=3000
 DIRECTORY_FILE=DDISA - Grantee Directory.html
 
@@ -182,12 +187,13 @@ DIRECTORY_FILE=DDISA - Grantee Directory.html
 DB_MODE=supabase
 SUPABASE_URL=replace-with-your-supabase-project-url
 SUPABASE_SERVICE_ROLE_KEY=replace-with-your-supabase-service-role-key
+SUPABASE_ANON_KEY=replace-with-your-supabase-anon-key
 ```
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser; it bypasses RLS and
 must only live on the server (or in Netlify function environment variables).
 
 On Netlify, set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
-`PROFILE_LINK_SECRET` as site environment variables (read by the functions at
-runtime), plus `SUPABASE_ANON_KEY` (injected into `netlify/config.js` by the
-build). Only the anon key ever reaches the static site.
+`SUPABASE_ANON_KEY` as site environment variables (the build injects the anon
+key into `netlify/config.js`; the functions read all three at runtime). Only
+the anon key ever reaches the static site.

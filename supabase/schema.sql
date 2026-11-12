@@ -21,7 +21,7 @@ create extension if not exists pgcrypto;
 -- ----------------------------------------------------------------------------
 create table if not exists public.organisations (
   id                uuid primary key default gen_random_uuid(),
-  -- Public identifier used in signed edit links, e.g. "digital-woman-uganda".
+  -- Public identifier used in profile URLs and edit access, e.g. "digital-woman-uganda".
   slug              text not null unique
                       check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
   name              text not null check (char_length(name) between 2 and 180),
@@ -52,8 +52,10 @@ create table if not exists public.organisations (
   logo_background   text not null default '',
   publication_status text not null default 'draft'
                       check (publication_status in ('draft', 'pending', 'published', 'archived')),
-  -- Bump this to revoke every edit link issued for the organisation.
-  token_version     integer not null default 1,
+  -- Supabase Auth user (auth.users.id) allowed to edit this profile.
+  -- Null = nobody signed in can edit it yet; set it from the SQL editor with
+  --   update organisations set owner_id = '<auth-user-uuid>' where slug = '…';
+  owner_id           uuid references auth.users (id) on delete set null,
   last_reviewed     timestamptz,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
@@ -61,12 +63,21 @@ create table if not exists public.organisations (
 
 create index if not exists organisations_publication_status_idx
   on public.organisations (publication_status);
+create index if not exists organisations_owner_idx
+  on public.organisations (owner_id);
 create index if not exists organisations_country_idx on public.organisations (country);
 create index if not exists organisations_region_idx on public.organisations (region);
 
 -- Keeps databases created before logo backgrounds existed in step with this file.
 alter table public.organisations
   add column if not exists logo_background text not null default '';
+
+-- Migration for databases created before Supabase Auth replaced edit links:
+-- add the owner column and retire the token revocation counter.
+alter table public.organisations
+  add column if not exists owner_id uuid references auth.users (id) on delete set null;
+alter table public.organisations
+  drop column if exists token_version;
 
 -- ----------------------------------------------------------------------------
 -- 2. Type of CSO (one row per organisation and type)

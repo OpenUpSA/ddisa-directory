@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createProfileToken } from '../server/lib/tokens.mjs';
 import { handler as accessHandler } from '../functions/access.mjs';
 import { handler as submissionsHandler } from '../functions/submissions.mjs';
 import { handler as collaborationHandler } from '../functions/collaboration-requests.mjs';
@@ -9,9 +8,7 @@ import { handler as collaborationHandler } from '../functions/collaboration-requ
 // never overrides existing values).
 process.env.SUPABASE_URL = 'https://unit-test.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-unit-test-key';
-process.env.PROFILE_LINK_SECRET = 'unit-test-secret-with-at-least-32-characters';
-
-const SECRET = process.env.PROFILE_LINK_SECRET;
+process.env.SUPABASE_ANON_KEY = 'anon-unit-test-key';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -20,15 +17,11 @@ function json(body, status = 200) {
   });
 }
 
-function tokenFor(organisationId, { version, ttlSeconds = 3600 } = {}) {
-  return createProfileToken({
-    organisationId,
-    organisationName: 'Test Organisation',
-    secret: SECRET,
-    ttlSeconds,
-    ...(version !== undefined ? { version } : {}),
-  });
-}
+const LINKED_ORGANISATION = {
+  slug: 'digital-woman-uganda',
+  name: 'Digital Woman Uganda',
+  publication_status: 'published',
+};
 
 function installFetch(context, responder) {
   const original = globalThis.fetch;
@@ -47,6 +40,7 @@ function installFetch(context, responder) {
       method: options.method || 'GET',
       pathname: url.pathname,
       search: url.search,
+      headers: options.headers || {},
       body: options.body ?? null,
       json: parsed,
     };
@@ -59,76 +53,105 @@ function installFetch(context, responder) {
   return calls;
 }
 
-function postEvent(body, ip) {
+function postEvent(body, ip, authorization) {
   return {
     httpMethod: 'POST',
-    headers: { 'x-forwarded-for': ip },
+    headers: {
+      'x-forwarded-for': ip,
+      ...(authorization ? { authorization } : {}),
+    },
     body: JSON.stringify(body),
     isBase64Encoded: false,
   };
 }
 
+// GoTrue responder: "Bearer good-jwt" is a valid session for user-1.
+function authUser(call) {
+  const authorization = String(call.headers?.authorization || call.headers?.Authorization || '');
+  if (authorization === 'Bearer good-jwt') return json({ id: 'user-1', email: 'editor@digitalwoman.example' });
+  return json({ message: 'JWT expired' }, 401);
+}
+
 // --- access -----------------------------------------------------------------
 
-test('access returns the organisation for a valid, current token', async (context) => {
-  const calls = installFetch(context, () =>
-    json([
-      { slug: 'digital-woman-uganda', name: 'Digital Woman Uganda', publication_status: 'published', token_version: 1 },
-    ]),
-  );
+test('access returns the organisation linked to the signed-in user', async (context) => {
+  const calls = installFetch(context, (call) => {
+    if (call.pathname === '/auth/v1/user') return authUser(call);
+    if (call.search.includes('owner_id=eq.')) return json([LINKED_ORGANISATION]);
+    return json([]);
+  });
 
   const response = await accessHandler({
     httpMethod: 'GET',
-    queryStringParameters: { token: tokenFor('digital-woman-uganda', { version: 1 }) },
+    headers: { authorization: 'Bearer good-jwt' },
   });
 
   assert.equal(response.statusCode, 200);
   const body = JSON.parse(response.body);
   assert.equal(body.organisationId, 'digital-woman-uganda');
   assert.equal(body.organisationName, 'Digital Woman Uganda');
-  assert.ok(!Number.isNaN(Date.parse(body.expiresAt)));
-  assert.equal(calls.length, 1);
+  assert.equal(body.email, 'editor@digitalwoman.example');
+  assert.equal(calls.length, 2);
   assert.equal(response.headers['Cache-Control'], 'no-store');
 });
 
-test('access rejects expired tokens without touching the database', async (context) => {
+test('access rejects anonymous requests without touching the database', async (context) => {
   const calls = installFetch(context, () => {
-    throw new Error('fetch must not be called for invalid tokens');
+    throw new Error('fetch must not be called without a session');
   });
 
-  const response = await accessHandler({
-    httpMethod: 'GET',
-    queryStringParameters: { token: tokenFor('digital-woman-uganda', { ttlSeconds: -60 }) },
-  });
+  const response = await accessHandler({ httpMethod: 'GET', headers: {} });
 
   assert.equal(response.statusCode, 401);
-  assert.match(JSON.parse(response.body).error, /invalid or has expired/);
+  assert.match(JSON.parse(response.body).error, /Sign in/);
   assert.equal(calls.length, 0);
 });
 
-test('access rejects revoked links (token_version mismatch)', async (context) => {
-  installFetch(context, () =>
-    json([{ slug: 'digital-woman-uganda', name: 'Digital Woman Uganda', publication_status: 'published', token_version: 2 }]),
-  );
+test('access rejects expired or invalid sessions', async (context) => {
+  const calls = installFetch(context, (call) => {
+    if (call.pathname === '/auth/v1/user') return json({ message: 'JWT expired' }, 401);
+    throw new Error('organisation lookup must not run for invalid sessions');
+  });
 
   const response = await accessHandler({
     httpMethod: 'GET',
-    queryStringParameters: { token: tokenFor('digital-woman-uganda', { version: 1 }) },
+    headers: { authorization: 'Bearer expired-jwt' },
   });
 
   assert.equal(response.statusCode, 401);
-  assert.match(JSON.parse(response.body).error, /revoked/);
+  assert.match(JSON.parse(response.body).error, /session has expired/);
+  assert.equal(calls.length, 1);
 });
 
-test('access 404s for an organisation that is not in the directory', async (context) => {
-  installFetch(context, () => json([]));
+test('access 403s for a signed-in user with no linked organisation', async (context) => {
+  installFetch(context, (call) => {
+    if (call.pathname === '/auth/v1/user') return authUser(call);
+    if (call.search.includes('owner_id=eq.')) return json([]);
+    return json([]);
+  });
 
   const response = await accessHandler({
     httpMethod: 'GET',
-    queryStringParameters: { token: tokenFor('ghost-organisation', { version: 1 }) },
+    headers: { authorization: 'Bearer good-jwt' },
   });
 
-  assert.equal(response.statusCode, 404);
+  assert.equal(response.statusCode, 403);
+  assert.match(JSON.parse(response.body).error, /not linked to an organisation/);
+});
+
+test('access reports 503 when Supabase Auth is unreachable', async (context) => {
+  installFetch(context, () => {
+    throw new Error('connection refused');
+  });
+
+  const response = await accessHandler({
+    httpMethod: 'GET',
+    headers: { authorization: 'Bearer good-jwt' },
+  });
+
+  assert.equal(response.statusCode, 503);
+  // 5xx bodies are masked to the generic message by errorResponse().
+  assert.match(JSON.parse(response.body).error, /could not complete that request/);
 });
 
 // --- submissions: profile updates -------------------------------------------
@@ -136,11 +159,10 @@ test('access 404s for an organisation that is not in the directory', async (cont
 test('profile updates publish directly with images and child rows', async (context) => {
   const photoBase64 = Buffer.from('fake-image-bytes').toString('base64');
   const calls = installFetch(context, ({ method, pathname, search }) => {
+    if (pathname === '/auth/v1/user') return authUser({ headers: { authorization: 'Bearer good-jwt' } });
     if (pathname === '/rest/v1/organisations' && method === 'GET') {
-      if (search.includes('token_version')) {
-        return json([
-          { slug: 'digital-woman-uganda', name: 'Digital Woman Uganda', publication_status: 'published', token_version: 1 },
-        ]);
+      if (search.includes('owner_id=eq.')) {
+        return json([LINKED_ORGANISATION]);
       }
       return json([
         { id: 'org-uuid-1', slug: 'digital-woman-uganda', name: 'Digital Woman Uganda', photo_path: '', logo_path: '' },
@@ -154,7 +176,6 @@ test('profile updates publish directly with images and child rows', async (conte
   const response = await submissionsHandler(
     postEvent(
       {
-        accessToken: tokenFor('digital-woman-uganda', { version: 1 }),
         contactEmail: 'hello@digitalwoman.example',
         summary: 'Updated summary.',
         description: 'Updated description.',
@@ -167,6 +188,7 @@ test('profile updates publish directly with images and child rows', async (conte
         photo: { dataUrl: `data:image/webp;base64,${photoBase64}`, filename: 'photo.webp' },
       },
       '10.1.1.1',
+      'Bearer good-jwt',
     ),
   );
 
@@ -204,45 +226,51 @@ test('profile updates publish directly with images and child rows', async (conte
   assert.match(audit.json.internal_notes, /Published automatically/);
 });
 
-test('profile updates for an unknown organisation return 404', async (context) => {
-  installFetch(context, () => json([]));
+test('profile updates from a user with no linked organisation return 403', async (context) => {
+  installFetch(context, (call) => {
+    if (call.pathname === '/auth/v1/user') return authUser(call);
+    if (call.search.includes('owner_id=eq.')) return json([]);
+    return json([]);
+  });
 
   const response = await submissionsHandler(
     postEvent(
       {
-        accessToken: tokenFor('ghost-organisation', { version: 1 }),
         contactEmail: 'ghost@example.org',
         summary: 'Summary.',
         description: 'Description.',
         type: ['Youth-focused'],
       },
       '10.1.5.1',
+      'Bearer good-jwt',
     ),
   );
 
-  assert.equal(response.statusCode, 404);
+  assert.equal(response.statusCode, 403);
+  assert.match(JSON.parse(response.body).error, /not linked to an organisation/);
 });
 
-test('a revoked edit token cannot submit updates', async (context) => {
-  installFetch(context, () =>
-    json([{ slug: 'digital-woman-uganda', name: 'Digital Woman Uganda', publication_status: 'published', token_version: 3 }]),
-  );
+test('an expired session cannot submit updates', async (context) => {
+  installFetch(context, (call) => {
+    if (call.pathname === '/auth/v1/user') return json({ message: 'JWT expired' }, 401);
+    throw new Error('organisation lookup must not run for invalid sessions');
+  });
 
   const response = await submissionsHandler(
     postEvent(
       {
-        accessToken: tokenFor('digital-woman-uganda', { version: 1 }),
         contactEmail: 'hello@digitalwoman.example',
         summary: 'Summary.',
         description: 'Description.',
         type: ['Women-focused'],
       },
       '10.1.6.1',
+      'Bearer expired-jwt',
     ),
   );
 
   assert.equal(response.statusCode, 401);
-  assert.match(JSON.parse(response.body).error, /revoked/);
+  assert.match(JSON.parse(response.body).error, /session has expired/);
 });
 
 // --- submissions: new organisations -----------------------------------------

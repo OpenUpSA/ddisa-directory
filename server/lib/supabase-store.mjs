@@ -204,8 +204,25 @@ export class SupabaseStore {
   async findOrganisation(organisationId) {
     const rows = await this.rest('organisations', {
       query: {
-        select: 'slug,name,publication_status,token_version',
+        select: 'slug,name,publication_status',
         slug: `eq.${organisationId}`,
+        limit: 1,
+      },
+    });
+    return rows[0] || null;
+  }
+
+  /**
+   * The organisation a Supabase Auth user may edit, matched through
+   * organisations.owner_id. Returns null when the user owns nothing yet.
+   */
+  async findOrganisationByOwner(ownerId) {
+    if (!ownerId) return null;
+    const rows = await this.rest('organisations', {
+      query: {
+        select: 'slug,name,publication_status',
+        owner_id: `eq.${ownerId}`,
+        order: 'name.asc',
         limit: 1,
       },
     });
@@ -301,8 +318,8 @@ export class SupabaseStore {
   }
 
   /**
-   * Direct publication of a profile update (signed edit link already verified
-   * by the caller). Uploads images to the public buckets at stable slug paths,
+   * Direct publication of a profile update (the caller already verified
+   * the editor's Supabase Auth session and organisation link). Uploads images to the public buckets at stable slug paths,
    * updates the organisation row, then replaces its child rows.
    */
   async publishProfileUpdate(organisationId, payload, photo, logo) {

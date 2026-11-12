@@ -1,9 +1,9 @@
-import { verifyProfileToken, tokenMatchesOrganisation } from '../server/lib/tokens.mjs';
+import { editorFromRequest } from '../server/lib/auth.mjs';
 import { normaliseSubmission, handleSubmit } from '../server/lib/submissions.mjs';
 import { cleanImage } from '../server/lib/validation.mjs';
 import {
   getStore,
-  getTokenSecret,
+  getAuthConfig,
   jsonResponse,
   errorResponse,
   parseJsonBody,
@@ -15,7 +15,7 @@ const rateLimiter = new RateLimiter();
 
 /**
  * POST /.netlify/functions/submissions
- * Profile updates (with a valid edit token) and new organisations are
+ * Profile updates (with a Supabase Auth session) and new organisations are
  * validated server-side and published directly to Supabase, mirroring the
  * reference server's contract.
  */
@@ -31,12 +31,20 @@ export async function handler(event) {
     }
 
     const body = parseJsonBody(event);
+    // A Bearer header means "editing my organisation"; no header means a
+    // public, anonymous new-organisation submission.
     let access = null;
-    if (body.accessToken) {
-      access = verifyProfileToken(body.accessToken, getTokenSecret());
-      if (!access) {
-        return jsonResponse(401, { error: 'This edit link is invalid or has expired.' });
-      }
+    try {
+      const { baseUrl, apiKey } = getAuthConfig();
+      const editor = await editorFromRequest({
+        authorization: event.headers.authorization || event.headers.Authorization,
+        baseUrl,
+        apiKey,
+        store: getStore(),
+      });
+      access = editor ? editor.access : null;
+    } catch (error) {
+      return errorResponse(error);
     }
 
     let payload;
@@ -51,20 +59,7 @@ export async function handler(event) {
       throw error;
     }
 
-    const store = getStore();
-    if (access) {
-      const organisation = await store.findOrganisation(payload.organisationId);
-      if (!organisation) {
-        return jsonResponse(404, { error: 'The organisation could not be found.' });
-      }
-      if (!tokenMatchesOrganisation(access, organisation)) {
-        return jsonResponse(401, {
-          error: 'This edit link has been revoked. Request a new link from DDISA.',
-        });
-      }
-    }
-
-    const submission = await handleSubmit(store, payload, photo, logo);
+    const submission = await handleSubmit(getStore(), payload, photo, logo);
     return jsonResponse(201, {
       ok: true,
       message: access

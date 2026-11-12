@@ -15,9 +15,9 @@
 [build.environment]
   NODE_VERSION = "24"
 
-# Server-side write flows (edit links, submissions, collaboration requests).
-# Functions read SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and
-# PROFILE_LINK_SECRET from the site environment — never from the browser.
+# Server-side write flows (grantee sign-in, submissions, collaboration
+# requests). Functions read SUPABASE_URL, SUPABASE_ANON_KEY and
+# SUPABASE_SERVICE_ROLE_KEY from the site environment — never from the browser.
 [functions]
   directory = "functions"
   node_bundler = "esbuild"

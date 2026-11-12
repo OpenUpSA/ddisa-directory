@@ -41,6 +41,14 @@ export class PreviewStore {
     return (await this.listDirectory()).find((row) => row.id === organisationId) || null;
   }
 
+  /**
+   * The preview store has no Supabase Auth, so nobody can own a profile
+   * locally: profile edits are unavailable in preview mode.
+   */
+  async findOrganisationByOwner() {
+    return null;
+  }
+
   async createSubmission(payload, photo, logo) {
     await mkdir(this.photoDir, { recursive: true });
     const id = randomUUID();

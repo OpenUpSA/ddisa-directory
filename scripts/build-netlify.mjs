@@ -58,10 +58,8 @@ export async function buildNetlify(directoryRoot = root) {
 
   // 3. Point the write flows at the Netlify Functions.
   const apiRewrites = [
-    [
-      "`./api/access?token=${encodeURIComponent(editToken)}`",
-      "`/.netlify/functions/access?token=${encodeURIComponent(editToken)}`",
-    ],
+    ["'./api/access'", "'/.netlify/functions/access'"],
+    ["'./api/config'", "'/.netlify/functions/config'"],
     ["'./api/submissions'", "'/.netlify/functions/submissions'"],
     ["'./api/collaboration-requests'", "'/.netlify/functions/collaboration-requests'"],
   ];

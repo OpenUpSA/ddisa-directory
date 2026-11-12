@@ -36,15 +36,25 @@ export function getStore() {
   return store;
 }
 
-export function getTokenSecret() {
+export function getAuthConfig() {
   ensureLocalEnv();
-  const secret = process.env.PROFILE_LINK_SECRET;
-  if (!secret || secret.startsWith('replace-')) {
-    const error = new Error('PROFILE_LINK_SECRET must be configured.');
-    error.status = 500;
-    throw error;
-  }
-  return secret;
+  return {
+    baseUrl: process.env.SUPABASE_URL || '',
+    apiKey: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  };
+}
+
+/**
+ * Safe-to-expose Supabase settings for the browser (anon key only — never
+ * the service-role key). Used by the sign-in UI when window.DDISA_ENV is
+ * unavailable.
+ */
+export function getPublicConfig() {
+  ensureLocalEnv();
+  return {
+    supabaseUrl: process.env.SUPABASE_URL || '',
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
+  };
 }
 
 export function jsonResponse(statusCode, body, headers = {}) {

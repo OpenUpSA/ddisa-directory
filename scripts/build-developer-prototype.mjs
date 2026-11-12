@@ -24,12 +24,12 @@ for (const assetPath of assetPaths) {
 }
 
 html = html.replace(
-  "const editToken=new URLSearchParams(location.search).get('edit')||'';",
-  "const demoPrototype=true;\nconst editToken=demoPrototype?'demo-prototype':(new URLSearchParams(location.search).get('edit')||'');",
+  "const editRequested=new URLSearchParams(location.search).has('edit');",
+  "const demoPrototype=true;\nconst editRequested=demoPrototype||new URLSearchParams(location.search).has('edit');",
 );
 html = html.replace(
-  "async function initialiseEditAccess(){\n if(!editToken||!databaseOnline)",
-  "async function initialiseEditAccess(){\n if(demoPrototype){editAccess={organisationId:'digital-woman-uganda',organisationName:'Digital Woman Uganda',expiresAt:null};if(activeProfileIndex!==null)openProfile(activeProfileIndex,false);return}\n if(!editToken||!databaseOnline)",
+  "async function initialiseEditAccess(){\n const token=await getAccessToken();",
+  "async function initialiseEditAccess(){\n if(demoPrototype){editAccess={organisationId:'digital-woman-uganda',organisationName:'Digital Woman Uganda'};updateAuthButton();$('auth-button').hidden=true;if(activeProfileIndex!==null)openProfile(activeProfileIndex,false);return}\n const token=await getAccessToken();",
 );
 html = html.replace(
   "async function hydrateDirectory(){\n if(!databaseOnline){",

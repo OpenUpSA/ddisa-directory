@@ -54,7 +54,7 @@ export const CSO_TYPES = new Set([
 ]);
 
 /**
- * Public organisation ID used in slugs and signed edit links.
+ * Public organisation ID used in slugs and profile URLs.
  * Must stay identical everywhere: front-end, invite script, seed, publish.
  */
 export function slugify(name) {

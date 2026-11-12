@@ -74,8 +74,8 @@ function mapSupabaseOrganisation(row) {
 }
 
 // Loads published profiles straight from Supabase with the anon key.
-// Write flows (submissions, edit links, collaboration requests) arrive with
-// the Supabase Auth + server-function work and stay disabled until then.
+// Write flows (sign-in-gated submissions, collaboration requests) call the
+// Netlify Functions, which verify the Supabase Auth session server-side.
 async function hydrateDirectory() {
   if (!databaseOnline) return;
   const config = window.DDISA_ENV || {};

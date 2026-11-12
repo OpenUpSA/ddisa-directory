@@ -15,7 +15,7 @@ the release test results.
 - `DDISA - Grantee Directory - Shareable.html` — self-contained read-only copy
   for offline circulation.
 - `assets/` — organisation logos and profile images used by the source build.
-- `server/` — local reference server for API, validation and signed edit links.
+- `server/` — local reference server for API, validation and Supabase Auth session checks.
 - `supabase/` — SQL schema, RLS policies and storage buckets for the database.
 - `scripts/` — build, seed and private-link utilities.
 - `tests/` — automated regression checks.
@@ -62,7 +62,7 @@ The deploy has two parts:
 - **`netlify/`** — the static site: the Grantee Directory front-end with the
   embedded dataset removed, loading published profiles directly from Supabase
   with the anon key.
-- **`functions/`** — the server-side write flows (edit links, submissions,
+- **`functions/`** — the server-side write flows (grantee sign-in, submissions,
   collaboration requests) running as Netlify Functions with the service-role
   key.
 
@@ -75,7 +75,6 @@ Environment variables**:
 | `SUPABASE_URL` | build + functions | Project URL (Supabase → Settings → API) |
 | `SUPABASE_ANON_KEY` | build → `config.js` | Public read key for the browser |
 | `SUPABASE_SERVICE_ROLE_KEY` | functions only | Server-side writes; never shipped to the browser |
-| `PROFILE_LINK_SECRET` | functions | Verifies signed grantee edit links |
 
 Trigger a deploy so the build injects the anon key into `config.js`. Then run
 `npm run upload:assets` once from your machine so the seeded
@@ -108,51 +107,48 @@ self-contained HTML files.
 
 ## Grantee profile editing
 
-Grantees edit their profile through a private, expiring link — no accounts:
+Grantees edit their profile by signing in with a Supabase Auth account — no
+expiring links:
 
-```bash
-PUBLIC_BASE_URL=https://ddisa.netlify.app npm run invite -- "Digital Woman Uganda" 30
-```
+1. Create a user in Supabase → **Authentication → Users → Add user** (email
+   + password; disable "Auto Confirm" if you want to vet sign-ups).
+2. Link that user to one organisation:
+   `update organisations set owner_id = '<auth-user-uuid>' where slug = '…';`
+3. Send the grantee your site URL with `?edit` (e.g.
+   `https://ddisa.netlify.app/?edit`) — or they click **Grantee sign in** in
+   the directory header.
 
-Or generate **every** organisation's link in one run (mail-merge ready):
+How it holds together:
 
-```bash
-npm run invite:all -- 30
-```
-
-That writes `.data/edit-links.csv` — columns: organisation, slug, public_email,
-edit_link, expires_at — reading each org's current `token_version` from
-Supabase (or the embedded snapshot if Supabase isn't configured). The CSV
-contains a live credential for every profile: keep it private, use it for the
-mail merge, then delete it (`.data/` is gitignored).
-
-The link is valid for the given number of days and permits edits only for the
-named organisation. How it holds together:
-
-- The token is an HMAC signature (keyed by `PROFILE_LINK_SECRET`) over the
-  organisation slug, an expiry and the organisation's current `token_version`.
-- The site validates it via `GET /.netlify/functions/access` and reveals
-  **Edit your organisation**. Publishes flow through
-  `POST /.netlify/functions/submissions`, which re-verifies the token,
-  validates every field server-side, uploads images to Storage, replaces the
-  profile rows and records an audit row in `submissions`.
-- **Revoke every outstanding link** for an organisation by bumping one column:
-  `update organisations set token_version = token_version + 1 where slug = '…';`
+- The browser signs in against Supabase GoTrue (email + password) and keeps
+  the session in `localStorage`, refreshing the JWT automatically.
+- Every editing request carries `Authorization: Bearer <jwt>`. The site
+  validates it via `GET /.netlify/functions/access` and reveals
+  **Edit your organisation** for the organisation linked through
+  `organisations.owner_id`.
+- Publishes flow through `POST /.netlify/functions/submissions`, which
+  re-verifies the session, validates every field server-side, uploads images
+  to Storage, replaces the profile rows and records an audit row in
+  `submissions`.
+- **Revoke access** by deleting the user in Supabase → Authentication, or by
+  clearing `owner_id`:
+  `update organisations set owner_id = null where slug = '…';`
 - New organisations (the **Add your organisation** form) and collaboration
-  requests go through the same functions — rate limited per connection, with
-  the collaboration consent flag stored.
+  requests stay anonymous — no sign-in required — and go through the same
+  functions, rate limited per connection, with the collaboration consent flag
+  stored.
 
 Local full-stack testing: `npm start` (reference server, shared submission
 code) or `npx netlify dev` to run the real functions (needs netlify-cli).
 
-Not yet connected: e-mailing edit links automatically, collaboration
-notifications, Turnstile bot protection, Supabase Auth.
+Not yet connected: e-mailing collaboration notifications, Turnstile bot
+protection.
 
 ## Current reference implementation
 
 The included Node server mirrors the production write flows — direct
 publication in Supabase mode, a local review queue in preview mode — and
-protects grantee edit links with HMAC signatures. It validates Type of CSO,
+verifies grantee sessions against Supabase Auth. It validates Type of CSO,
 countries, offerings, contacts, resources, URLs and 5 MB image limits before
 anything reaches the database; the Netlify Functions share that exact code
 (`server/lib/submissions.mjs`).
@@ -165,9 +161,9 @@ runs directly on Node and is intended to move behind Netlify Functions.
 
 ## Security
 
-- Keep database tokens and `PROFILE_LINK_SECRET` server-side.
+- Keep the service-role key server-side; only the anon key reaches the browser.
 - Use HTTPS in production.
 - Restrict static serving to the supplied HTML files and `/assets/`.
-- Validate signed edit links and all submitted fields on the server.
+- Verify Supabase Auth sessions and all submitted fields on the server.
 - Add bot protection to public submission endpoints.
 - Do not publish `.env`, database exports or storage credentials.

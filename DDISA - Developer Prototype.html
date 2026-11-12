@@ -57,7 +57,7 @@ aside select{appearance:none;-webkit-appearance:none;padding-right:38px;backgrou
 <header><a class="brand" href="./"><span class="brandmark">d.</span><span>DDISA<span class="subbrand">KNOWLEDGE HUB</span></span></a><span class="header-label">People. Ideas. Collective impact.</span><span class="private">Cohort 1 directory</span></header>
 <main>
 <section id="directory">
-<div class="section-top"><div><div class="eyebrow">EXPLORE &amp; CONNECT</div><h2>A network of possibility</h2></div><button id="open-add-organisation" class="add-organisation-button database-only" type="button" hidden>Add your organisation</button></div>
+<div class="section-top"><div><div class="eyebrow">EXPLORE &amp; CONNECT</div><h2>A network of possibility</h2></div><button id="open-add-organisation" class="add-organisation-button database-only" type="button" hidden>Add your organisation</button><button id="auth-button" class="add-organisation-button" type="button" hidden>Grantee sign in</button></div>
 <div id="regions" class="regions" aria-label="Filter by region"></div>
 <button id="filters-toggle" class="filter-toggle" aria-controls="filters-panel" aria-expanded="false">Filters <span id="filters-toggle-count">Open</span></button>
 <div class="workspace">
@@ -186,7 +186,90 @@ let selectedNewLogoData=null;
 let editAccess=null;
 let databaseOnline=location.protocol==='http:'||location.protocol==='https:';
 const demoPrototype=true;
-const editToken=demoPrototype?'demo-prototype':(new URLSearchParams(location.search).get('edit')||'');
+const editRequested=demoPrototype||new URLSearchParams(location.search).has('edit');
+const authStorageKey='ddisa.auth';
+let supabaseConfig;
+async function loadSupabaseConfig(){
+ if(supabaseConfig!==undefined)return supabaseConfig;
+ const env=window.DDISA_ENV||{};
+ const fromEnv={url:String(env.SUPABASE_URL||'').replace(/\/+$/,''),anonKey:env.SUPABASE_ANON_KEY||''};
+ if(fromEnv.url&&!fromEnv.url.includes('YOUR-PROJECT')&&fromEnv.anonKey){supabaseConfig=fromEnv;return supabaseConfig}
+ if(!databaseOnline){supabaseConfig=null;return null}
+ try{
+  const response=await fetch('./api/config',{headers:{Accept:'application/json'}});
+  const result=await response.json().catch(()=>({}));
+  supabaseConfig=response.ok&&result.supabaseUrl?{url:String(result.supabaseUrl).replace(/\/+$/,''),anonKey:result.supabaseAnonKey||''}:null;
+ }catch{supabaseConfig=null}
+ return supabaseConfig;
+}
+function readAuthSession(){try{return JSON.parse(localStorage.getItem(authStorageKey)||'null')}catch{return null}}
+function writeAuthSession(session){try{if(session)localStorage.setItem(authStorageKey,JSON.stringify(session));else localStorage.removeItem(authStorageKey)}catch{}}
+async function getAccessToken(){
+ const session=readAuthSession();
+ if(!session||!session.access_token)return null;
+ if(Number(session.expires_at||0)>Date.now()+5000)return session.access_token;
+ const config=await loadSupabaseConfig();
+ if(!config||!config.url||!config.anonKey||!session.refresh_token){writeAuthSession(null);return null}
+ try{
+  const response=await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`,{
+   method:'POST',
+   headers:{'Content-Type':'application/json',apikey:config.anonKey},
+   body:JSON.stringify({refresh_token:session.refresh_token})
+  });
+  if(!response.ok){writeAuthSession(null);return null}
+  const result=await response.json();
+  writeAuthSession({access_token:result.access_token,refresh_token:result.refresh_token||session.refresh_token,expires_at:Date.now()+Number(result.expires_in||3600)*1000,email:result.user?.email||session.email||''});
+  return readAuthSession().access_token;
+ }catch{return null}
+}
+async function signIn(email,password){
+ const config=await loadSupabaseConfig();
+ if(!config||!config.url||!config.anonKey)throw new Error('Directory sign-in is not configured for this deployment yet.');
+ let response;
+ try{
+  response=await fetch(`${config.url}/auth/v1/token?grant_type=password`,{
+   method:'POST',
+   headers:{'Content-Type':'application/json',apikey:config.anonKey},
+   body:JSON.stringify({email,password})
+  });
+ }catch{throw new Error('We could not reach the sign-in service. Check your connection and try again.')}
+ const result=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(result.error_description||result.msg||'Email or password not recognised.');
+ writeAuthSession({access_token:result.access_token,refresh_token:result.refresh_token,expires_at:Date.now()+Number(result.expires_in||3600)*1000,email:result.user?.email||email});
+ updateAuthButton();
+}
+function signOut(){
+ writeAuthSession(null);
+ editAccess=null;$('edit-profile').hidden=true;
+ updateAuthButton();
+}
+function updateAuthButton(){
+ const button=$('auth-button');if(!button)return;
+ const session=readAuthSession();
+ button.textContent=session?`Sign out${session.email?` (${session.email})`:''}`:'Grantee sign in';
+ button.title=session?'Sign out of the directory editor':'Sign in to edit your organisation profile';
+}
+function ensureSignInDialog(){
+ if($('signin-form'))return;
+ document.body.insertAdjacentHTML('beforeend','<dialog id="signin-form"><div class="profile-topbar"><h2 class="profile-editor-title">Grantee sign in</h2><button id="signin-close" class="close" aria-label="Close sign-in" type="button">×</button></div><form id="signin-fields"><div class="editor-section"><p class="editor-note">Sign in with the account DDISA set up for your organisation to edit your public profile.</p></div><div class="editor-section"><label for="signin-email">Email<input id="signin-email" type="email" autocomplete="username" maxlength="254" required placeholder="name@organisation.org"></label></div><div class="editor-section"><label for="signin-password">Password<input id="signin-password" type="password" autocomplete="current-password" required></label></div><div class="editor-section"><div class="editor-status" id="signin-status"></div></div><div class="editor-section"><button class="editor-primary" type="submit">Sign in</button></div></form></dialog>');
+ $('signin-close').addEventListener('click',()=>$('signin-form').close());
+ $('signin-fields').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const button=event.target.querySelector('button[type="submit"]');
+  button.disabled=true;
+  setFormStatus('signin-status','Signing in…','loading');
+  try{
+   await signIn($('signin-email').value.trim(),$('signin-password').value);
+   setFormStatus('signin-status','','');
+   $('signin-form').close();
+   await initialiseEditAccess();
+   setAlert('app-alert',editAccess?'Signed in. Open your organisation profile and choose “Edit your organisation”.':'Signed in, but this account is not linked to an organisation yet. Ask DDISA to connect it.',editAccess?'info':'error');
+  }catch(error){
+   setFormStatus('signin-status',error.message,'error');
+  }finally{button.disabled=false}
+ });
+}
+function openSignIn(){ensureSignInDialog();setFormStatus('signin-status','','');$('signin-form').showModal();}
 const focusGroups={
  'Civic participation & democracy':['Digital civic participation & citizen engagement','Electoral integrity & voter education','Youth civic engagement & digital technology'],
  'Transparency & access to information':['Transparency & open data','Access to information & digital inclusion'],
@@ -755,7 +838,7 @@ function collectResources(targetId){
 function openProfileEditor(){
  const d=data[activeProfileIndex];if(!d)return;
  if(!editAccess||editAccess.organisationId!==d.id){
-  setAlert('profile-alert','Open the private edit link supplied by DDISA to update this profile.','error');
+  setAlert('profile-alert','Sign in with your grantee account to update this profile.','error');
   return;
  }
  selectedPhotoData=null;
@@ -779,10 +862,13 @@ function openProfileEditor(){
 async function postSubmission(payload){
  if(demoPrototype){window.__ddisaDemoSubmissions=window.__ddisaDemoSubmissions||[];window.__ddisaDemoSubmissions.push({...payload,submittedAt:new Date().toISOString()});return {ok:true,message:'Your organisation has been published to the directory.',demo:true}}
  let response;
+ const headers={'Content-Type':'application/json'};
+ const token=await getAccessToken();
+ if(token)headers.Authorization=`Bearer ${token}`;
  try{
   response=await fetch('./api/submissions',{
    method:'POST',
-   headers:{'Content-Type':'application/json'},
+   headers,
    body:JSON.stringify(payload)
   });
  }catch{
@@ -805,7 +891,6 @@ async function submitProfileUpdate(event){
  try{
   const offerings=collectOfferings('editor-offerings');
   await postSubmission({
-   accessToken:editToken,
    type:collectCsoTypes('editor-types'),
    contactEmail:$('editor-contact-email').value.trim(),
    contacts:collectContacts('editor-contacts'),
@@ -825,6 +910,7 @@ async function submitProfileUpdate(event){
  }catch(error){
   setFormStatus('editor-status',error.message,'error');
   if(error.status===401){
+   writeAuthSession(null);updateAuthButton();
    editAccess=null;$('edit-profile').hidden=true;
    setAlert('profile-alert',error.message,'error');
   }
@@ -895,16 +981,26 @@ function setFormImagePreview(id,src,emptyText){
  $(id).innerHTML=src?`<img src="${esc(src)}" alt="Selected image preview">`:emptyText;
 }
 async function initialiseEditAccess(){
- if(demoPrototype){editAccess={organisationId:'digital-woman-uganda',organisationName:'Digital Woman Uganda',expiresAt:null};if(activeProfileIndex!==null)openProfile(activeProfileIndex,false);return}
- if(!editToken||!databaseOnline){$('edit-profile').hidden=true;return}
+ if(demoPrototype){editAccess={organisationId:'digital-woman-uganda',organisationName:'Digital Woman Uganda'};updateAuthButton();$('auth-button').hidden=true;if(activeProfileIndex!==null)openProfile(activeProfileIndex,false);return}
+ const token=await getAccessToken();
+ if(!databaseOnline||!token){
+  editAccess=null;$('edit-profile').hidden=true;
+  if(databaseOnline&&editRequested&&!token)openSignIn();
+  return;
+ }
  try{
-  const response=await fetch(`./api/access?token=${encodeURIComponent(editToken)}`,{headers:{Accept:'application/json'}});
+  const response=await fetch('./api/access',{headers:{Accept:'application/json',Authorization:`Bearer ${token}`}});
   const result=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(result.error||'This edit link is invalid or has expired.');
+  if(!response.ok){
+   const error=new Error(result.error||'Your session has expired. Please sign in again.');
+   error.status=response.status;
+   throw error;
+  }
   editAccess=result;
   setAlert('profile-alert','','');
   if(activeProfileIndex!==null)openProfile(activeProfileIndex,false);
  }catch(error){
+  if(error.status===401){writeAuthSession(null);updateAuthButton()}
   editAccess=null;$('edit-profile').hidden=true;
   setAlert('profile-alert',error.message,'error');
  }
@@ -1026,11 +1122,14 @@ document.addEventListener('click',event=>{
  const dismiss=event.target.closest('[data-dismiss-alert]');
  if(dismiss)setAlert(dismiss.dataset.dismissAlert,'','error');
 });
+$('auth-button').addEventListener('click',()=>{readAuthSession()?signOut():openSignIn()});
 $('demo-open-editor').addEventListener('click',()=>{const index=data.findIndex(record=>record.name==='Digital Woman Uganda');if(index>=0){openProfile(index,true);requestAnimationFrame(()=>openProfileEditor())}});
 $('demo-open-collaboration').addEventListener('click',()=>{const index=data.findIndex(record=>record.name==='Digital Woman Uganda');if(index>=0){openProfile(index,true);requestAnimationFrame(()=>openCollaborationRequestForm('Digital Woman Uganda'))}});
 $('demo-open-new-organisation').addEventListener('click',openOrganisationForm);
 window.addEventListener('hashchange',applyStateFromHash);
 ensureAlerts();
+updateAuthButton();
+$('auth-button').hidden=!databaseOnline;
 applyStateFromHash();
 hydrateDirectory();
 
