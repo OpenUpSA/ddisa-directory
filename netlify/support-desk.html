@@ -67,55 +67,64 @@
     }
 
     .site-header {
-      min-height: 82px;
-      padding: 13px max(5vw, 22px);
+      height: 94px;
+      padding: 0 6%;
       background: var(--ink);
       color: white;
       border-bottom: 1px solid #1f2b3e;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 18px;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 11px;
+      gap: 12px;
       color: white;
       text-decoration: none;
-      font-size: 22px;
+      font-size: 23px;
       font-weight: 800;
       letter-spacing: 1px;
     }
 
     .brandmark {
+      display: grid;
+      place-items: center;
+      background: #35e6bd;
+      color: #061329;
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      font-size: 39px;
+      line-height: 1;
+    }
+
+    .brand-copy {
       display: block;
-      width: 164px;
-      height: 48px;
-      padding: 7px;
-      border-radius: 9px;
-      background: white;
-      object-fit: contain;
     }
 
     .subbrand {
       display: block;
-      margin-top: 3px;
+      margin-top: 5px;
       color: #c3cddd;
-      font-size: 8px;
-      letter-spacing: 1.8px;
+      font-size: 9px;
+      letter-spacing: 2px;
+    }
+
+    .header-label {
+      color: #c3cddd;
+      font-size: 12px;
     }
 
     .standalone-label {
       display: inline-flex;
       align-items: center;
-      padding: 9px 13px;
+      padding: 8px 13px;
       border: 1px solid #4c5a70;
       border-radius: 30px;
       color: #e3eaf5;
       font-size: 11px;
-      font-weight: 700;
       white-space: nowrap;
     }
 
@@ -182,7 +191,9 @@
     .page {
       position: relative;
       z-index: 2;
-      width: min(1100px, calc(100% - 44px));
+      width: 100%;
+      max-width: 1400px;
+      padding: 0 6%;
       margin: -62px auto 54px;
       display: grid;
       grid-template-columns: minmax(230px, .72fr) minmax(0, 2fr);
@@ -752,15 +763,16 @@
     }
 
     .site-footer {
-      width: min(1100px, calc(100% - 44px));
-      margin: 0 auto;
-      padding: 21px 0 28px;
+      width: 100%;
+      max-width: 1400px;
+      margin: 60px auto 0;
+      padding: 25px 6%;
       border-top: 1px solid var(--line);
       display: flex;
       justify-content: space-between;
-      gap: 18px;
+      gap: 20px;
       color: var(--muted);
-      font-size: 9px;
+      font-size: 10px;
     }
 
     :focus-visible {
@@ -787,30 +799,6 @@
     }
 
     @media (max-width: 600px) {
-      .site-header {
-        min-height: 72px;
-      }
-
-      .brand {
-        font-size: 20px;
-      }
-
-      .brandmark {
-        width: 124px;
-        height: 41px;
-        padding: 5px;
-        border-radius: 8px;
-      }
-
-      .brand-copy {
-        display: none;
-      }
-
-      .standalone-label {
-        padding: 8px 10px;
-        font-size: 10px;
-      }
-
       .hero {
         min-height: 0;
         padding: 38px 22px 92px;
@@ -830,7 +818,6 @@
       }
 
       .page {
-        width: calc(100% - 28px);
         gap: 15px;
         margin-bottom: 34px;
       }
@@ -879,7 +866,6 @@
       }
 
       .site-footer {
-        width: calc(100% - 34px);
         flex-direction: column;
         line-height: 1.55;
       }
@@ -888,10 +874,8 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="brand">
-      <img class="brandmark" src="./assets/ddi-logo.png" alt="Digital Democracy Initiative">
-      <span class="brand-copy">DDISA<span class="subbrand">KNOWLEDGE HUB</span></span>
-    </div>
+    <a class="brand" href="./"><span class="brandmark">d.</span><span class="brand-copy">DDISA<span class="subbrand">KNOWLEDGE HUB</span></span></a>
+    <span class="header-label">People. Ideas. Collective impact.</span>
     <span class="standalone-label">Support Desk</span>
   </header>
 
