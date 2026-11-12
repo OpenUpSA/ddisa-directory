@@ -134,6 +134,10 @@ Tables:
   status.
 - `submissions` — the review queue: request type, organisation reference,
   the validated payload as JSONB, uploaded image paths and review status.
+- `support_requests` — Support Desk tickets from `/support-desk`: contact
+  and request fields, attachment metadata, ticket status and the
+  `integrations` JSON (Trello / Resend / Slack outcomes). Written only by
+  SupportDeskService with the service-role key.
 - `organisations.owner_id` — the Supabase Auth user allowed to edit the
   profile (null = nobody). Delete the user or clear the column to revoke
   access.
@@ -180,6 +184,11 @@ The local Node server exposes:
   directory HTML and lets the front-end render the profile from the path
   (mirrored on Netlify by the `/org*` → `index.html` rewrite in
   `netlify.toml`).
+- `POST /api/support-requests` — Support Desk ticket submission (rate
+  limited to 6 per hour per connection, 40 MB body for attachments); on
+  Netlify rewritten to the `support-requests` function.
+- `GET /api/support/health` — Support Desk mode and configured
+  integrations.
 
 Static serving is restricted to the three supplied HTML files,
 `/assets/` and the `/org/<slug>` route. Repository source files are not

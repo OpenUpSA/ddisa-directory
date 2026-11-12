@@ -18,6 +18,7 @@ aside select{appearance:none;-webkit-appearance:none;padding-right:38px;backgrou
 .section-top .add-organisation-button{border-color:var(--green);background:white;color:var(--green)}
 .section-top .add-organisation-button:hover{border-color:var(--ink);color:var(--ink)}
 .section-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-left:auto}
+#support-desk-link{text-decoration:none;display:inline-flex;align-items:center}
 .cso-picker{border:1px solid var(--line);border-radius:9px;padding:0 14px 14px;background:#f8fafc}
 .cso-picker legend{padding:0 6px;font-size:12px;font-weight:700}.cso-picker .required{color:#b33b31}
 .cso-picker-help{margin:0 0 11px;color:var(--muted);font-size:10px;line-height:1.5}
@@ -91,7 +92,7 @@ aside select{appearance:none;-webkit-appearance:none;padding-right:38px;backgrou
 <div id="org-page-content"></div>
 </section>
 <section id="directory">
-<div class="section-top"><div><div class="eyebrow">EXPLORE &amp; CONNECT</div><h2>A network of possibility</h2></div><div class="section-actions"><button id="open-add-organisation" class="add-organisation-button database-only" type="button" hidden>Add your organisation</button><button id="edit-my-org" class="add-organisation-button database-only" type="button" hidden>Edit your organisation</button><button id="auth-button" class="add-organisation-button database-only" type="button" hidden>Grantee sign in</button></div></div>
+<div class="section-top"><div><div class="eyebrow">EXPLORE &amp; CONNECT</div><h2>A network of possibility</h2></div><div class="section-actions"><button id="open-add-organisation" class="add-organisation-button database-only" type="button" hidden>Add your organisation</button><button id="edit-my-org" class="add-organisation-button database-only" type="button" hidden>Edit your organisation</button><a id="support-desk-link" class="add-organisation-button database-only" href="/support-desk" hidden>Support desk</a><button id="auth-button" class="add-organisation-button database-only" type="button" hidden>Grantee sign in</button></div></div>
 <div id="regions" class="regions" aria-label="Filter by region"></div>
 <button id="filters-toggle" class="filter-toggle" aria-controls="filters-panel" aria-expanded="false">Filters <span id="filters-toggle-count">Open</span></button>
 <div class="workspace">
@@ -249,10 +250,30 @@ function updateEditingControls(){
  const canEdit=Boolean(readAuthSession())&&databaseOnline;
  const edit=$('edit-my-org');
  if(edit)edit.hidden=!canEdit;
+ const support=$('support-desk-link');
+ if(support){
+  support.hidden=!canEdit;
+  if(canEdit)support.href=supportDeskHref();
+ }
  const add=$('open-add-organisation');
  if(add&&canEdit)add.hidden=true;
  else if(add&&directoryReady)add.hidden=false;
  updateOrgPageBar();
+}
+function supportDeskHref(){
+ const base='/support-desk';
+ if(!editAccess)return base;
+ const record=data.find(row=>slugFor(row)===editAccess.organisationId);
+ const params=new URLSearchParams();
+ params.set('organisation',editAccess.organisationName||'');
+ const email=editAccess.email||(readAuthSession()||{}).email;
+ if(email)params.set('email',email);
+ if(record&&record.country)params.set('country',record.country);
+ const typeMap={'LGBTIQ+ focused':'LGBTIQ+','Women-focused':'Women-led','Youth-focused':'Youth-led'};
+ const priority=['LGBTIQ+ focused','Women-focused','Youth-focused'];
+ const matched=record?priority.find(t=>(record.type||[]).includes(t)):null;
+ if(matched)params.set('organisationType',typeMap[matched]);
+ return `${base}?${params.toString()}`;
 }
 function openMyOrganisationEditor(){
  if(!editAccess){

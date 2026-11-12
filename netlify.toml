@@ -29,3 +29,15 @@
   from = "/org*"
   to = "/index.html"
   status = 200
+
+# Support Desk: the page route serves the static shell, and the form posts
+# to its Netlify Function through this same-origin rewrite.
+[[redirects]]
+  from = "/support-desk"
+  to = "/support-desk.html"
+  status = 200
+
+[[redirects]]
+  from = "/api/support-requests"
+  to = "/.netlify/functions/support-requests"
+  status = 200

@@ -313,3 +313,107 @@ create policy "Public logos are readable"
 
 -- No insert/update/delete policies for anon/authenticated on any bucket:
 -- uploads happen server-side with the service-role key.
+
+-- ----------------------------------------------------------------------------
+-- 12. Support Desk — tickets submitted through /support-desk
+--     (ported from support-desk/supabase/support_desk.sql). The browser never
+--     touches this table: SupportDeskService writes it with the service-role
+--     key after validating the request server-side (POST /api/support-requests
+--     or the support-requests Netlify function).
+-- ----------------------------------------------------------------------------
+create table if not exists public.support_requests (
+  id uuid primary key default gen_random_uuid(),
+  request_id text not null unique,
+  ticket_id text not null unique,
+  submitted_at timestamptz not null default now(),
+  full_name text not null check (char_length(full_name) between 1 and 180),
+  email text not null check (char_length(email) between 3 and 254),
+  organisation text not null check (char_length(organisation) between 1 and 180),
+  country text not null check (char_length(country) between 1 and 80),
+  organisation_type text not null check (
+    organisation_type in ('CBO', 'Women-led', 'Youth-led', 'LGBTIQ+', 'Other')
+  ),
+  organisation_type_other text not null default '',
+  support_type text not null check (
+    support_type in ('Technical support', 'Data', 'Grant, payment or admin', 'Other')
+  ),
+  support_type_other text not null default '',
+  goal text not null check (
+    goal in ('Report', 'Tool fix or build', 'Data work', 'Learning', 'Other')
+  ),
+  goal_other text not null default '',
+  description text not null check (char_length(description) between 1 and 600),
+  tried_so_far text not null default '' check (char_length(tried_so_far) <= 600),
+  attachment_path text not null default '',
+  attachment_name text not null default '',
+  source text not null default 'DDISA web support form',
+  status text not null default 'Received',
+  trello_card_id text not null default '',
+  trello_card_url text not null default '',
+  integrations jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint organisation_other_required check (
+    organisation_type <> 'Other' or char_length(organisation_type_other) > 0
+  ),
+  constraint support_other_required check (
+    support_type <> 'Other' or char_length(support_type_other) > 0
+  ),
+  constraint goal_other_required check (
+    goal <> 'Other' or char_length(goal_other) > 0
+  )
+);
+
+create index if not exists support_requests_submitted_at_idx
+  on public.support_requests (submitted_at desc);
+
+create index if not exists support_requests_status_idx
+  on public.support_requests (status);
+
+create index if not exists support_requests_email_idx
+  on public.support_requests (lower(email));
+
+drop trigger if exists support_requests_set_updated_at on public.support_requests;
+create trigger support_requests_set_updated_at
+before update on public.support_requests
+for each row execute function public.set_updated_at();
+
+-- The browser never accesses this table directly. The server uses the
+-- service-role key, which bypasses RLS after validating the request.
+alter table public.support_requests enable row level security;
+revoke all on table public.support_requests from anon, authenticated;
+grant all on table public.support_requests to service_role;
+
+-- Private bucket for support attachments (25 MB cap, documented MIME types).
+insert into storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+values (
+  'support-attachments',
+  'support-attachments',
+  false,
+  26214400,
+  array[
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/csv',
+    'text/plain',
+    'image/jpeg',
+    'image/png',
+    'image/webp'
+  ]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+-- No storage.objects policy is created intentionally: only the server-side
+-- service-role key uploads to and reads from this bucket.

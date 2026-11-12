@@ -8,6 +8,11 @@ import { PreviewStore } from './lib/preview-store.mjs';
 import { editorFromRequest } from './lib/auth.mjs';
 import { cleanImage } from './lib/validation.mjs';
 import {
+  SupportDeskService,
+  normaliseSupportRequest,
+  cleanSupportAttachment,
+} from './lib/support-desk.mjs';
+import {
   normaliseSubmission,
   normaliseCollaborationRequest,
   handleSubmit,
@@ -44,6 +49,10 @@ const store =
         serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
       })
     : new PreviewStore(root);
+
+// Support Desk tickets: preview file store by default; SUPPORT_DESK_MODE=
+// production enables Supabase + Trello + Resend + Slack (validated at boot).
+const supportDesk = new SupportDeskService({ root });
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -116,10 +125,12 @@ async function serveStatic(requestPath, response) {
   // from the directory HTML — same document, the front-end picks the
   // profile up from the path.
   if (/^org(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/.test(requested)) requested = directoryFile;
+  if (/^support-desk\/?$/.test(requested)) requested = 'DDISA - Support Desk.html';
   const publicFiles = new Set([
     directoryFile,
     'DDISA - Grantee Directory - Shareable.html',
     'DDISA - Developer Prototype.html',
+    'DDISA - Support Desk.html',
   ]);
   const isAsset = requested.startsWith('assets/')
     && !requested.includes('\0')
@@ -271,6 +282,42 @@ const server = createServer(async (request, response) => {
       sendJson(response, 201, {
         ok: true,
         message: 'Your collaboration request has been received.',
+      });
+      return;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/support/health') {
+      sendJson(response, 200, {
+        ok: true,
+        ...supportDesk.status(),
+      });
+      return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/support-requests') {
+      if (isRateLimited(request, 'support', 6, 60 * 60 * 1000)) {
+        sendJson(response, 429, {
+          error: 'Too many support requests from this connection. Try again later.',
+        });
+        return;
+      }
+
+      const body = await readJsonBody(request, 40 * 1024 * 1024);
+      let payload;
+      let attachment;
+      try {
+        payload = normaliseSupportRequest(body);
+        attachment = cleanSupportAttachment(body.attachment);
+      } catch (error) {
+        error.status = 400;
+        throw error;
+      }
+
+      const result = await supportDesk.submit(payload, attachment);
+      sendJson(response, 201, {
+        ok: true,
+        message: 'Your support request has been logged.',
+        ...result,
       });
       return;
     }

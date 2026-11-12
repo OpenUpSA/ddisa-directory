@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findExpression } from '../server/lib/directory-data.mjs';
@@ -125,6 +125,17 @@ async function main() {
   await mkdir(outputDir, { recursive: true });
   await writeFile(resolve(outputDir, 'index.html'), html);
   await writeFile(resolve(outputDir, 'config.js'), renderConfig(supabaseUrl, anonKey));
+
+  // The Support Desk ships as its own static page; it posts to the
+  // support-requests function through the /api/support-requests redirect and
+  // loads its logo from /assets (relative URL resolves from /support-desk).
+  const supportHtml = await readFile(resolve(root, 'DDISA - Support Desk.html'), 'utf8');
+  await mkdir(resolve(outputDir, 'assets'), { recursive: true });
+  await writeFile(resolve(outputDir, 'support-desk.html'), supportHtml);
+  await copyFile(
+    resolve(root, 'assets', 'ddi-logo.png'),
+    resolve(outputDir, 'assets', 'ddi-logo.png'),
+  );
 
   console.log(`Wrote ${resolve(outputDir, 'index.html')} (${html.length} bytes)`);
   console.log(

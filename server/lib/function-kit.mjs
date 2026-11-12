@@ -1,7 +1,9 @@
 import { loadEnv } from './env.mjs';
 import { SupabaseStore } from './supabase-store.mjs';
+import { SupportDeskService } from './support-desk.mjs';
 
 let store;
+let supportDesk;
 let envLoaded = false;
 
 /**
@@ -55,6 +57,19 @@ export function getPublicConfig() {
     supabaseUrl: process.env.SUPABASE_URL || '',
     supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   };
+}
+
+/**
+ * Support Desk service for the support-requests function. Preview mode
+ * stores tickets under .data/; SUPPORT_DESK_MODE=production requires the
+ * Supabase, Trello, Resend and Slack environment variables.
+ */
+export function getSupportDesk() {
+  ensureLocalEnv();
+  if (!supportDesk) {
+    supportDesk = new SupportDeskService({ root: process.cwd() });
+  }
+  return supportDesk;
 }
 
 export function jsonResponse(statusCode, body, headers = {}) {

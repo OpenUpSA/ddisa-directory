@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
@@ -62,12 +62,14 @@ test('modules bundled into functions avoid import.meta (breaks Netlify CJS bundl
     'server/lib/function-kit.mjs',
     'server/lib/submissions.mjs',
     'server/lib/auth.mjs',
+    'server/lib/support-desk.mjs',
     'server/lib/validation.mjs',
     'server/lib/supabase-store.mjs',
     'server/lib/env.mjs',
     'functions/access.mjs',
     'functions/config.mjs',
     'functions/submissions.mjs',
+    'functions/support-requests.mjs',
     'functions/collaboration-requests.mjs',
     'functions/health.mjs',
   ];
@@ -89,4 +91,17 @@ test('organisation pages route to the SPA shell', async () => {
   assert.match(html, /id="org-page"/, 'The standalone profile section must ship in the build.');
   assert.match(html, /parseOrgPagePath/, 'The front-end must parse /org/<slug> routes.');
   assert.match(html, /href="\$\{orgPathFor\(slugFor\(d\)\)\}"/, 'Cards must link to organisation pages.');
+});
+
+test('support desk ships as its own page with API redirects', async () => {
+  const support = await readFile(resolve(root, 'netlify', 'support-desk.html'), 'utf8');
+  assert.match(support, /id="support-form"/);
+  assert.match(support, /fetch\('\.\/api\/support-requests'/);
+
+  const logo = await stat(resolve(root, 'netlify', 'assets', 'ddi-logo.png'));
+  assert.ok(logo.size > 0, 'The support desk logo must ship with the build.');
+
+  const toml = await readFile(resolve(root, 'netlify.toml'), 'utf8');
+  assert.match(toml, /from = "\/support-desk"/);
+  assert.match(toml, /to = "\/\.netlify\/functions\/support-requests"/);
 });

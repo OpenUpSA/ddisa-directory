@@ -115,6 +115,34 @@ actions.
 - API, config and asset URLs are root-absolute so they resolve from nested
   `/org/…` paths.
 
+## Support Desk
+
+The Support Desk is a standalone page served at **`/support-desk`**
+(`DDISA - Support Desk.html`):
+
+- When signed in, the directory shows a **Support desk** button next to
+  **Edit your organisation**. It deep-links to the form with the signed-in
+  organisation's name, contact email, country and organisation type already
+  filled in.
+- The form posts to `POST /api/support-requests` (reference server). On
+  Netlify the same URL is rewritten to the `support-requests` function by
+  `netlify.toml`.
+- `server/lib/support-desk.mjs` (SupportDeskService) validates the request
+  and stores the ticket. **Preview mode** (default) writes
+  `.data/support-requests.json` and attachments to
+  `.data/support-attachments/`. **Production mode**
+  (`SUPPORT_DESK_MODE=production`) writes the `support_requests` table,
+  uploads attachments to the private `support-attachments` bucket, creates a
+  Trello card, sends the confirmation email through Resend and posts to
+  Slack — each outcome is recorded in the ticket's `integrations` JSON.
+- The table and bucket are created by `supabase/schema.sql` (section 12).
+- `GET /api/support/health` reports the current mode and which integrations
+  are configured.
+
+Leave `SUPPORT_DESK_MODE` unset (or `preview`) until the Trello, Resend and
+Slack values are configured — production mode fails fast at startup when a
+required value is missing.
+
 ## Run release checks
 
 ```bash
