@@ -176,9 +176,14 @@ The local Node server exposes:
 - `GET /api/access` — `Authorization: Bearer <jwt>` → linked organisation
 - `POST /api/submissions`
 - `POST /api/collaboration-requests`
+- `GET /org/<slug>` — standalone organisation profile page; serves the
+  directory HTML and lets the front-end render the profile from the path
+  (mirrored on Netlify by the `/org*` → `index.html` rewrite in
+  `netlify.toml`).
 
-Static serving is restricted to the three supplied HTML files and
-`/assets/`. Repository source files are not publicly served.
+Static serving is restricted to the three supplied HTML files,
+`/assets/` and the `/org/<slug>` route. Repository source files are not
+publicly served.
 
 ## Environment variables
 

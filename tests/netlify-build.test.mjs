@@ -20,7 +20,7 @@ test('netlify build strips the embedded dataset', async () => {
 test('netlify build connects to Supabase through config.js', async () => {
   const html = await readFile(resolve(root, 'netlify', 'index.html'), 'utf8');
 
-  assert.match(html, /<script src="\.\/config\.js"><\/script>/);
+  assert.match(html, /<script src="\/config\.js"><\/script>/);
   assert.match(html, /window\.DDISA_ENV/);
   assert.match(html, /\/rest\/v1\/organisations\?select=/);
   assert.match(html, /Bearer \$\{anonKey\}/);
@@ -38,7 +38,7 @@ test('netlify build wires write flows to Netlify Functions', async () => {
   assert.match(html, /\/\.netlify\/functions\/config/);
   assert.match(html, /\/\.netlify\/functions\/submissions/);
   assert.match(html, /\/\.netlify\/functions\/collaboration-requests/);
-  assert.doesNotMatch(html, /\.\/api\//, 'No reference-server API URLs may remain.');
+  assert.doesNotMatch(html, /['"]\/api\//, 'No reference-server API URLs may remain.');
   // Write UI is live again now that the functions exist.
   assert.match(html, /class="request-collaboration-button"/);
   assert.match(html, /\$\('open-add-organisation'\)\.hidden = false/);
@@ -78,4 +78,15 @@ test('modules bundled into functions avoid import.meta (breaks Netlify CJS bundl
       `${file} must not use import.meta — it is empty in Netlify's CJS bundles.`,
     );
   }
+});
+
+test('organisation pages route to the SPA shell', async () => {
+  const toml = await readFile(resolve(root, 'netlify.toml'), 'utf8');
+  assert.match(toml, /from = "\/org\*"/, 'netlify.toml must rewrite /org* to index.html');
+  assert.match(toml, /status = 200/);
+
+  const html = await readFile(resolve(root, 'netlify', 'index.html'), 'utf8');
+  assert.match(html, /id="org-page"/, 'The standalone profile section must ship in the build.');
+  assert.match(html, /parseOrgPagePath/, 'The front-end must parse /org/<slug> routes.');
+  assert.match(html, /href="\$\{orgPathFor\(slugFor\(d\)\)\}"/, 'Cards must link to organisation pages.');
 });

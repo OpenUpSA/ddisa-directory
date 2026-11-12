@@ -109,9 +109,13 @@ async function readJsonBody(request, limit = 30 * 1024 * 1024) {
 }
 
 async function serveStatic(requestPath, response) {
-  const requested = requestPath === '/' || requestPath === ''
+  let requested = requestPath === '/' || requestPath === ''
     ? directoryFile
     : decodeURIComponent(requestPath.slice(1));
+  // Standalone organisation pages (/org/<slug>) are rendered client-side
+  // from the directory HTML — same document, the front-end picks the
+  // profile up from the path.
+  if (/^org(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/.test(requested)) requested = directoryFile;
   const publicFiles = new Set([
     directoryFile,
     'DDISA - Grantee Directory - Shareable.html',

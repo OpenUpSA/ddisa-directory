@@ -96,6 +96,25 @@ npm run build:developer-prototype
 Both builds embed all images so the resulting HTML files can be opened without
 the `assets/` directory.
 
+## Organisation pages
+
+Every organisation has a standalone, shareable profile page at
+`/org/<slug>` — e.g. `/org/digital-woman-uganda`. The cards'
+**View full profile** links navigate there on the deployed site, and the
+page shows the same profile content as a full page with **Back to
+directory**, **Copy link** and (when signed in) **Edit your organisation**
+actions.
+
+- Netlify: `netlify.toml` rewrites `/org*` to `index.html` (client-side
+  route); the reference server serves the directory HTML for
+  `/org/<slug>` directly.
+- Old shared modal links (`…#?profile=Name`) redirect to the canonical
+  `/org/<slug>` page.
+- The self-contained shareable/`file://` build keeps the modal flow, since
+  static files have no server routes.
+- API, config and asset URLs are root-absolute so they resolve from nested
+  `/org/…` paths.
+
 ## Run release checks
 
 ```bash

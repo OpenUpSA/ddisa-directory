@@ -126,6 +126,7 @@ async function hydrateDirectory() {
     document.querySelector('.private').textContent = source;
     document.querySelector('.private').title = source;
     setAlert('app-alert', '', '');
+    directoryReady = true;
     $('open-add-organisation').hidden = false;
   } catch (error) {
     console.warn('Supabase directory unavailable.', error);

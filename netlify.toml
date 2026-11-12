@@ -21,3 +21,11 @@
 [functions]
   directory = "functions"
   node_bundler = "esbuild"
+
+# Standalone organisation profile pages (/org/<slug>) are rendered
+# client-side from index.html. Non-forced rewrite: existing files (assets,
+# config.js, functions) are still served before this applies.
+[[redirects]]
+  from = "/org*"
+  to = "/index.html"
+  status = 200

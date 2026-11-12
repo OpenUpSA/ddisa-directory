@@ -58,10 +58,10 @@ export async function buildNetlify(directoryRoot = root) {
 
   // 3. Point the write flows at the Netlify Functions.
   const apiRewrites = [
-    ["'./api/access'", "'/.netlify/functions/access'"],
-    ["'./api/config'", "'/.netlify/functions/config'"],
-    ["'./api/submissions'", "'/.netlify/functions/submissions'"],
-    ["'./api/collaboration-requests'", "'/.netlify/functions/collaboration-requests'"],
+    ["'/api/access'", "'/.netlify/functions/access'"],
+    ["'/api/config'", "'/.netlify/functions/config'"],
+    ["'/api/submissions'", "'/.netlify/functions/submissions'"],
+    ["'/api/collaboration-requests'", "'/.netlify/functions/collaboration-requests'"],
   ];
   for (const [from, to] of apiRewrites) {
     html = requireInclude(html, from, `the API URL ${from}`);
@@ -72,7 +72,7 @@ export async function buildNetlify(directoryRoot = root) {
   html = requireInclude(html, '<script>\n// Cohort 1 directory.', 'the main script tag');
   html = html.replace(
     '<script>\n// Cohort 1 directory.',
-    '<script src="./config.js"></script>\n<script>\n// Cohort 1 directory.',
+    '<script src="/config.js"></script>\n<script>\n// Cohort 1 directory.',
   );
 
   // 5. Don't flash "No organisations match these filters" before the data loads.
