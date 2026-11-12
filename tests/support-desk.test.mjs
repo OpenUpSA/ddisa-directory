@@ -185,3 +185,56 @@ test('production support requests create Trello, email and Slack records', async
     1,
   );
 });
+
+test('production mode runs with Supabase alone — Trello and Slack are optional', async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'ddisa-support-supabase-only-test-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  const calls = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    const method = options.method || 'GET';
+    calls.push({ url, method });
+    if (url.includes('/rest/v1/support_requests?request_id=eq.')) {
+      return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.includes('/rest/v1/support_requests?') && method === 'PATCH') {
+      return new Response(null, { status: 204 });
+    }
+    if (url.endsWith('/rest/v1/support_requests')) {
+      return new Response('', { status: 201 });
+    }
+    if (url.includes('/functions/v1/support-confirmation')) {
+      return new Response(JSON.stringify({ ok: true, messageId: 'email-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    throw new Error(`Unexpected provider request: ${method} ${url}`);
+  };
+
+  const service = new SupportDeskService({
+    root: directory,
+    fetchImpl,
+    now: () => new Date('2026-11-06T08:00:00.000Z'),
+    env: {
+      SUPPORT_DESK_MODE: 'production',
+      SUPABASE_URL: 'https://project.supabase.example',
+      SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
+    },
+  });
+
+  const result = await service.submit(normaliseSupportRequest(validRequest()), null);
+  assert.equal(result.preview, false);
+  assert.equal(result.integrations.trello.status, 'not configured');
+  assert.equal(result.integrations.slack.status, 'not configured');
+  assert.equal(result.integrations.email.status, 'sent');
+  assert.ok(
+    !calls.some((call) => call.url.includes('trello.com')),
+    'Trello must not be called without credentials',
+  );
+  assert.ok(
+    !calls.some((call) => call.url.includes('hooks.slack')),
+    'Slack must not be called without a webhook',
+  );
+});

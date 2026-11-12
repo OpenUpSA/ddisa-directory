@@ -276,16 +276,13 @@ export class SupportDeskService {
     this.supabaseBucket = env.SUPABASE_SUPPORT_BUCKET || 'support-attachments';
 
     if (this.mode === 'production') {
-      // Email delivery needs no server env: it runs through the
-      // `support-confirmation` Edge Function, which holds the Brevo secrets
-      // inside Supabase (BREVO_API_KEY, SUPPORT_EMAIL_FROM, ...).
+      // Only Supabase is a hard requirement. Email runs through the
+      // `support-confirmation` Edge Function (Brevo secrets live in Supabase);
+      // Trello and Slack are optional and report "not configured" in the
+      // ticket's integrations until their variables are set.
       const required = [
         'SUPABASE_URL',
         'SUPABASE_SERVICE_ROLE_KEY',
-        'TRELLO_KEY',
-        'TRELLO_TOKEN',
-        'TRELLO_LIST_ID',
-        'SLACK_SUPPORT_WEBHOOK_URL',
       ];
       const missing = required.filter((key) => !env[key] || String(env[key]).startsWith('replace-'));
       if (missing.length) throw new Error(`Missing support desk configuration: ${missing.join(', ')}`);
@@ -502,6 +499,9 @@ export class SupportDeskService {
   }
 
   async createTrelloCard(record) {
+    if (!this.env.TRELLO_KEY || !this.env.TRELLO_TOKEN || !this.env.TRELLO_LIST_ID) {
+      return { status: 'not configured' };
+    }
     const card = buildTrelloCard(record);
     const params = new URLSearchParams({
       key: this.env.TRELLO_KEY,
@@ -559,6 +559,9 @@ export class SupportDeskService {
   }
 
   async sendSlackNotification(record) {
+    if (!this.env.SLACK_SUPPORT_WEBHOOK_URL) {
+      return { status: 'not configured' };
+    }
     try {
       const response = await this.fetch(this.env.SLACK_SUPPORT_WEBHOOK_URL, {
         method: 'POST',

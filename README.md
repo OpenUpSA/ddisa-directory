@@ -149,9 +149,10 @@ not server/Netlify env):
 supabase secrets set BREVO_API_KEY=... SUPPORT_EMAIL_FROM=... SUPPORT_EMAIL_REPLY_TO=...
 ```
 
-Leave `SUPPORT_DESK_MODE` unset (or `preview`) until the Trello, Resend and
-Slack values are configured — production mode fails fast at startup when a
-required value is missing.
+Production mode needs only the Supabase variables — Trello and Slack are
+optional (their `integrations` entries report `not configured` until set),
+and email needs no server env at all because the Edge Function holds the
+Brevo secrets.
 
 ## Run release checks
 
