@@ -18,6 +18,19 @@ const rateLimiter = new RateLimiter();
  */
 export async function handler(event) {
   try {
+    if (event.httpMethod === 'GET') {
+      // Live self-diagnosis: which mode is this deployment running and which
+      // integrations are configured?  curl https://<site>/api/support-requests
+      try {
+        return jsonResponse(200, { ok: true, ...getSupportDesk().status() });
+      } catch (error) {
+        return jsonResponse(200, {
+          ok: false,
+          mode: process.env.SUPPORT_DESK_MODE === 'production' ? 'production' : 'preview',
+          error: error.message,
+        });
+      }
+    }
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { error: 'Method not allowed.' });
     }

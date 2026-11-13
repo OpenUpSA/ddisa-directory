@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -12,6 +12,7 @@ import {
   SupportDeskService,
 } from '../server/lib/support-desk.mjs';
 import { errorResponse } from '../server/lib/function-kit.mjs';
+import { handler as supportRequestHandler } from '../functions/support-requests.mjs';
 
 function validRequest(overrides = {}) {
   return {
@@ -279,4 +280,30 @@ test('storage failures surface actionable messages instead of a masked 500', asy
 
   const masked = errorResponse(new Error('internal stack details'));
   assert.match(JSON.parse(masked.body).error, /could not complete that request/);
+});
+
+test('preview storage failures expose an actionable message', async (context) => {
+  // Root is a FILE, so .data/ cannot be created — mimics a read-only
+  // function filesystem (Netlify) running in preview mode.
+  const rootFile = resolve(tmpdir(), `ddisa-readonly-${Date.now()}.txt`);
+  await writeFile(rootFile, 'not a directory');
+  context.after(() => rm(rootFile, { force: true }));
+
+  const service = new SupportDeskService({ root: rootFile, env: { SUPPORT_DESK_MODE: 'preview' } });
+  await assert.rejects(
+    () => service.submit(normaliseSupportRequest(validRequest()), null),
+    (error) =>
+      error.expose === true &&
+      /Preview ticket storage is unavailable/.test(error.message) &&
+      /SUPPORT_DESK_MODE=production/.test(error.message),
+  );
+});
+
+test('GET on the support function reports the running mode for diagnosis', async () => {
+  const response = await supportRequestHandler({ httpMethod: 'GET' });
+  assert.equal(response.statusCode, 200);
+  const body = JSON.parse(response.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.mode, 'preview', 'test environment has no SUPPORT_DESK_MODE set');
+  assert.equal(typeof body.supabase, 'boolean');
 });

@@ -316,19 +316,29 @@ export class SupportDeskService {
   }
 
   async submitPreview(record, attachment) {
-    const rows = await readJson(this.dataFile, []);
+    let rows;
+    try {
+      rows = await readJson(this.dataFile, []);
+    } catch (error) {
+      // ENOTDIR/EROFS etc. when .data/ cannot exist (read-only filesystem).
+      throw this.previewStorageError(error);
+    }
     const existing = rows.find((row) => row.requestId === record.requestId);
     if (existing) return this.publicResult(existing, { preview: true });
 
     if (attachment) {
-      await mkdir(this.attachmentDir, { recursive: true });
-      const storedName = `${record.ticketId}-${attachment.filename}`;
-      await writeFile(resolve(this.attachmentDir, storedName), attachment.buffer);
-      record.attachment = {
-        filename: attachment.filename,
-        contentType: attachment.contentType,
-        storagePath: `.data/support-attachments/${storedName}`,
-      };
+      try {
+        await mkdir(this.attachmentDir, { recursive: true });
+        const storedName = `${record.ticketId}-${attachment.filename}`;
+        await writeFile(resolve(this.attachmentDir, storedName), attachment.buffer);
+        record.attachment = {
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          storagePath: `.data/support-attachments/${storedName}`,
+        };
+      } catch (error) {
+        throw this.previewStorageError(error);
+      }
     }
     record.integrations = {
       trello: 'not configured in preview',
@@ -336,8 +346,27 @@ export class SupportDeskService {
       slack: 'not configured in preview',
     };
     rows.push(record);
-    await writeJsonAtomic(this.dataFile, rows);
+    try {
+      await writeJsonAtomic(this.dataFile, rows);
+    } catch (error) {
+      throw this.previewStorageError(error);
+    }
     return this.publicResult(record, { preview: true });
+  }
+
+  /**
+   * Preview mode writes .data/ under the working directory — fine locally,
+   * but on Netlify the function filesystem is read-only. Turn that EACCES/
+   * EROFS/ENOTDIR into a message that says exactly what to do instead of a
+   * masked 500.
+   */
+  previewStorageError(error) {
+    const wrapped = new Error(
+      `Preview ticket storage is unavailable (${error.code || error.message}). ` +
+        'Preview mode writes .data/ on the local machine only - set SUPPORT_DESK_MODE=production in this environment.',
+    );
+    wrapped.expose = true;
+    return wrapped;
   }
 
   async submitProduction(record, attachment) {
