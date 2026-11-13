@@ -285,7 +285,11 @@ export class SupportDeskService {
         'SUPABASE_SERVICE_ROLE_KEY',
       ];
       const missing = required.filter((key) => !env[key] || String(env[key]).startsWith('replace-'));
-      if (missing.length) throw new Error(`Missing support desk configuration: ${missing.join(', ')}`);
+      if (missing.length) {
+        const error = new Error(`Missing support desk configuration: ${missing.join(', ')}`);
+        error.expose = true; // actionable config problem — safe to show in the UI
+        throw error;
+      }
     }
   }
 
@@ -400,7 +404,13 @@ export class SupportDeskService {
       signal: AbortSignal.timeout(20_000),
     });
     const text = await response.text();
-    if (!response.ok) throw new Error(`Supabase returned ${response.status}: ${text.slice(0, 200)}`);
+    if (!response.ok) {
+      const error = new Error(`Supabase returned ${response.status}: ${text.slice(0, 200)}`);
+      // Actionable dependency failure (missing table, RLS, bad env) — expose
+      // it instead of the generic masked 500 so the form explains itself.
+      error.expose = true;
+      throw error;
+    }
     return text ? JSON.parse(text) : null;
   }
 

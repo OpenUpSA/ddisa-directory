@@ -332,7 +332,7 @@ const server = createServer(async (request, response) => {
     console.error(error);
     sendJson(response, error.status || 500, {
       error:
-        error.status && error.status < 500
+        (error.status && error.status < 500) || error.expose === true
           ? error.message
           : 'The directory could not complete that request.',
     });

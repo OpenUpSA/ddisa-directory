@@ -88,8 +88,12 @@ export function jsonResponse(statusCode, body, headers = {}) {
 
 export function errorResponse(error) {
   const status = error.status || 500;
+  // Known, actionable failures (error.expose) show their real message even
+  // at 5xx so admins can self-diagnose; everything else stays masked.
   const message =
-    status < 500 ? error.message : 'The directory could not complete that request.';
+    status < 500 || error.expose === true
+      ? error.message
+      : 'The directory could not complete that request.';
   if (status >= 500) console.error(error);
   return jsonResponse(status, { error: message });
 }

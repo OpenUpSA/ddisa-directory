@@ -11,6 +11,7 @@ import {
   normaliseSupportRequest,
   SupportDeskService,
 } from '../server/lib/support-desk.mjs';
+import { errorResponse } from '../server/lib/function-kit.mjs';
 
 function validRequest(overrides = {}) {
   return {
@@ -237,4 +238,45 @@ test('production mode runs with Supabase alone — Trello and Slack are optional
     !calls.some((call) => call.url.includes('hooks.slack')),
     'Slack must not be called without a webhook',
   );
+});
+
+test('storage failures surface actionable messages instead of a masked 500', async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'ddisa-support-expose-test-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  // Simulates the live outage: support_requests table missing (PGRST205 404).
+  const service = new SupportDeskService({
+    root: directory,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          code: 'PGRST205',
+          message: "Could not find the table 'public.support_requests' in the schema cache",
+        }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } },
+      ),
+    env: {
+      SUPPORT_DESK_MODE: 'production',
+      SUPABASE_URL: 'https://project.supabase.example',
+      SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
+    },
+  });
+
+  await assert.rejects(
+    () => service.submit(normaliseSupportRequest(validRequest()), null),
+    (error) => error.expose === true && /Could not find the table/.test(error.message),
+    'supabaseRequest errors must be flagged as expose',
+  );
+
+  // The user-facing renderer shows exposed 5xx messages and masks the rest.
+  const exposed = errorResponse(
+    Object.assign(new Error("Supabase returned 404: Could not find the table 'public.support_requests'"), {
+      expose: true,
+    }),
+  );
+  assert.equal(exposed.statusCode, 500);
+  assert.match(JSON.parse(exposed.body).error, /Could not find the table/);
+
+  const masked = errorResponse(new Error('internal stack details'));
+  assert.match(JSON.parse(masked.body).error, /could not complete that request/);
 });
