@@ -13,6 +13,12 @@ import {
 } from '../server/lib/support-desk.mjs';
 import { errorResponse } from '../server/lib/function-kit.mjs';
 import { handler as supportRequestHandler } from '../functions/support-requests.mjs';
+import { handler as supportAdminHandler } from '../functions/support-admin.mjs';
+
+// Deterministic env for handler-based tests (loadEnv never overrides these).
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://unit-test.supabase.co';
+process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'service-role-unit-test-key';
+process.env.SUPPORT_DESK_MODE = 'preview';
 
 function validRequest(overrides = {}) {
   return {
@@ -29,6 +35,13 @@ function validRequest(overrides = {}) {
     consent: true,
     ...overrides,
   };
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 test('support request validation accepts the documented form flow', () => {
@@ -129,11 +142,8 @@ test('production support requests create Trello, email and Slack records', async
         ? new Response(null, { status: 204 })
         : new Response('', { status: 201 });
     }
-    if (url.startsWith('https://api.trello.com/1/cards?')) {
-      return new Response(JSON.stringify({
-        id: 'trello-card-1',
-        shortUrl: 'https://trello.com/c/qa-card',
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (url.includes('/functions/v1/trello-card')) {
+      return jsonResponse({ ok: true, cardId: 'trello-card-1', url: 'https://trello.com/c/qa-card' });
     }
     if (url.includes('/functions/v1/support-confirmation')) {
       return new Response(JSON.stringify({ ok: true, messageId: 'email-1' }), {
@@ -168,9 +178,12 @@ test('production support requests create Trello, email and Slack records', async
   assert.equal(result.integrations.email.status, 'sent');
   assert.equal(result.integrations.slack.status, 'sent');
 
-  const trello = calls.find((call) => call.url.startsWith('https://api.trello.com/1/cards?'));
-  assert.match(trello.url, /idList=trello-list/);
-  assert.match(trello.url, /Support\+Request\+-\+OpenUp/);
+  const trello = calls.find((call) => call.url.includes('/functions/v1/trello-card'));
+  assert.ok(trello, 'the Trello card must be created through the trello-card edge function');
+  assert.match(String(trello.headers.Authorization || ''), /^Bearer /);
+  const trelloPayload = JSON.parse(trello.body);
+  assert.equal(trelloPayload.name, 'Support Request - OpenUp');
+  assert.match(trelloPayload.desc, /DDISA-20261106-/);
 
   const email = calls.find((call) => call.url.includes('/functions/v1/support-confirmation'));
   assert.ok(email, 'the confirmation email must go through the support-confirmation edge function');
@@ -228,12 +241,14 @@ test('production mode runs with Supabase alone — Trello and Slack are optional
 
   const result = await service.submit(normaliseSupportRequest(validRequest()), null);
   assert.equal(result.preview, false);
-  assert.equal(result.integrations.trello.status, 'not configured');
+  // Trello is always attempted through the edge function now; with no secrets
+  // configured there it fails per-ticket but must never fail the submission.
+  assert.equal(result.integrations.trello.status, 'failed');
   assert.equal(result.integrations.slack.status, 'not configured');
   assert.equal(result.integrations.email.status, 'sent');
   assert.ok(
-    !calls.some((call) => call.url.includes('trello.com')),
-    'Trello must not be called without credentials',
+    !calls.some((call) => call.url.includes('api.trello.com')),
+    'Trello must never be called directly from the server',
   );
   assert.ok(
     !calls.some((call) => call.url.includes('hooks.slack')),
@@ -306,4 +321,155 @@ test('GET on the support function reports the running mode for diagnosis', async
   assert.equal(body.ok, true);
   assert.equal(body.mode, 'preview', 'test environment has no SUPPORT_DESK_MODE set');
   assert.equal(typeof body.supabase, 'boolean');
+});
+
+test('the admin handler rejects unauthenticated requests', async () => {
+  const response = await supportAdminHandler({ httpMethod: 'GET', headers: {} });
+  assert.equal(response.statusCode, 401);
+  assert.match(JSON.parse(response.body).error, /Sign in to manage/);
+});
+
+test('admin verification requires a session and support_admins membership', async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'ddisa-support-adminauth-test-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  let admins = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    if (url.includes('/auth/v1/user')) {
+      const auth = String(options.headers?.Authorization || '');
+      if (auth === 'Bearer good-jwt') {
+        return jsonResponse({ id: 'user-1', email: 'admin@example.org' });
+      }
+      return jsonResponse({ message: 'JWT expired' }, 401);
+    }
+    if (url.includes('/rest/v1/support_admins')) return jsonResponse(admins);
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const service = new SupportDeskService({
+    root: directory,
+    fetchImpl,
+    env: {
+      SUPPORT_DESK_MODE: 'production',
+      SUPABASE_URL: 'https://project.supabase.example',
+      SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
+    },
+  });
+
+  await assert.rejects(
+    () => service.verifyAdmin(undefined),
+    (error) => error.status === 401 && /Sign in to manage/.test(error.message),
+    'no header → 401',
+  );
+  await assert.rejects(
+    () => service.verifyAdmin('Bearer expired-jwt'),
+    (error) => error.status === 401 && /session has expired/.test(error.message),
+    'invalid session → 401',
+  );
+  await assert.rejects(
+    () => service.verifyAdmin('Bearer good-jwt'),
+    (error) => error.status === 403 && /not have support-desk admin access/.test(error.message),
+    'valid session but not an admin → 403',
+  );
+
+  admins = [{ user_id: 'user-1', email: 'admin@example.org' }];
+  const admin = await service.verifyAdmin('Bearer good-jwt');
+  assert.deepEqual(admin, { id: 'user-1', email: 'admin@example.org' });
+});
+
+test('admin actions: list, status change, Trello forward (idempotent) and attachment signing', async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'ddisa-support-admin-actions-test-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  let trelloCalls = 0;
+  const patchBodies = [];
+  let currentTicket = {
+    request_id: 'req-1',
+    ticket_id: 'DDISA-20261106-ABCDEF',
+    submitted_at: '2026-11-06T08:00:00.000Z',
+    full_name: 'Sihle Makanya',
+    email: 'sihle@example.org',
+    organisation: 'OpenUp',
+    country: 'South Africa',
+    organisation_type: 'Women-led',
+    organisation_type_other: '',
+    support_type: 'Technical support',
+    support_type_other: '',
+    goal: 'Data work',
+    goal_other: '',
+    description: 'The directory sign-in button does nothing.',
+    tried_so_far: '',
+    attachment_path: 'DDISA-20261106-ABCDEF/evidence.pdf',
+    attachment_name: 'evidence.pdf',
+    source: 'DDISA web support form',
+    status: 'Received',
+    trello_card_id: '',
+    trello_card_url: '',
+    integrations: {},
+  };
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    const method = options.method || 'GET';
+    if (url.includes('/auth/v1/user')) return jsonResponse({ id: 'user-1', email: 'admin@example.org' });
+    if (url.includes('/rest/v1/support_admins')) return jsonResponse([{ user_id: 'user-1', email: 'admin@example.org' }]);
+    if (url.includes('/functions/v1/trello-card')) {
+      trelloCalls += 1;
+      return jsonResponse({ ok: true, cardId: 'card-9', url: 'https://trello.com/c/card-9' });
+    }
+    if (url.includes('/storage/v1/object/sign/')) {
+      return jsonResponse({ signedURL: '/object/sign/support-attachments/x?token=tok' });
+    }
+    if (url.includes('order=submitted_at.desc')) return jsonResponse([currentTicket]);
+    if (method === 'PATCH') {
+      const body = JSON.parse(options.body);
+      currentTicket = { ...currentTicket, ...body };
+      patchBodies.push(body);
+      return jsonResponse([currentTicket]);
+    }
+    if (url.includes('ticket_id=eq.')) return jsonResponse([currentTicket]);
+    return jsonResponse([]);
+  };
+  const service = new SupportDeskService({
+    root: directory,
+    fetchImpl,
+    env: {
+      SUPPORT_DESK_MODE: 'production',
+      SUPABASE_URL: 'https://project.supabase.example',
+      SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
+    },
+  });
+
+  const admin = await service.verifyAdmin('Bearer good-jwt');
+  assert.equal(admin.email, 'admin@example.org');
+
+  const list = await service.listTickets();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].ticketId, 'DDISA-20261106-ABCDEF');
+  assert.equal(list[0].organisation, 'OpenUp');
+
+  await assert.rejects(
+    () => service.setTicketStatus('DDISA-20261106-ABCDEF', 'Bogus'),
+    (error) => error.status === 400 && /Status must be one of/.test(error.message),
+  );
+
+  const statusResult = await service.setTicketStatus('DDISA-20261106-ABCDEF', 'In progress');
+  assert.equal(statusResult.status, 'In progress');
+  assert.equal(patchBodies.at(-1).status, 'In progress');
+
+  const forward = await service.forwardTicketToTrello('DDISA-20261106-ABCDEF');
+  assert.equal(forward.alreadyForwarded, false);
+  assert.equal(forward.cardId, 'card-9');
+  assert.equal(trelloCalls, 1);
+  assert.equal(patchBodies.at(-1).trello_card_url, 'https://trello.com/c/card-9');
+
+  const again = await service.forwardTicketToTrello('DDISA-20261106-ABCDEF');
+  assert.equal(again.alreadyForwarded, true, 'forwarding twice must not create a second card');
+  assert.equal(trelloCalls, 1);
+
+  const signed = await service.signAttachment('DDISA-20261106-ABCDEF');
+  assert.ok(
+    signed.url.startsWith('https://project.supabase.example/storage/v1/object/sign/'),
+    `unexpected signed url: ${signed.url}`,
+  );
+  assert.equal(signed.expiresIn, 3600);
 });

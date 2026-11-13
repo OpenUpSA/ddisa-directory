@@ -18,11 +18,11 @@ export function bearerToken(headerValue) {
  * Returns `{ id, email }` for a valid session, `null` when the token is
  * missing/expired/revoked, or throws a 503 when Supabase is unreachable.
  */
-export async function verifySupabaseUser({ baseUrl, apiKey, accessToken }) {
+export async function verifySupabaseUser({ baseUrl, apiKey, accessToken, fetchImpl = globalThis.fetch }) {
   if (!baseUrl || !accessToken) return null;
   let response;
   try {
-    response = await fetch(`${baseUrl.replace(/\/+$/, '')}/auth/v1/user`, {
+    response = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/auth/v1/user`, {
       headers: { apikey: apiKey, Authorization: `Bearer ${accessToken}` },
     });
   } catch {

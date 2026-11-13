@@ -136,8 +136,12 @@ Tables:
   the validated payload as JSONB, uploaded image paths and review status.
 - `support_requests` — Support Desk tickets from `/support-desk`: contact
   and request fields, attachment metadata, ticket status and the
-  `integrations` JSON (Trello / Resend / Slack outcomes). Written only by
-  SupportDeskService with the service-role key.
+  `integrations` JSON (Trello / email / Slack outcomes — Trello and email
+  run through Supabase Edge Functions). Written only by SupportDeskService
+  with the service-role key.
+- `support_admins` — who may use `/support-admin`: the Supabase Auth
+  `user_id` plus email. Grant/revoke with the SQL in `supabase/schema.sql`
+  section 13; the admin API checks this table after verifying the session.
 - `organisations.owner_id` — the Supabase Auth user allowed to edit the
   profile (null = nobody). Delete the user or clear the column to revoke
   access.
@@ -189,6 +193,11 @@ The local Node server exposes:
   Netlify rewritten to the `support-requests` function.
 - `GET /api/support/health` — Support Desk mode and configured
   integrations.
+- `GET|POST /api/support-admin` — admin console API: list tickets
+  (`GET`, or `?ticket=<id>` for a signed attachment URL), status changes and
+  Trello forwarding (`POST {action:'status'|'forward', …}`). Requires a
+  Supabase Auth session whose user is in `support_admins` (401/403
+  otherwise); rewritten to the `support-admin` function on Netlify.
 
 Static serving is restricted to the three supplied HTML files,
 `/assets/` and the `/org/<slug>` route. Repository source files are not

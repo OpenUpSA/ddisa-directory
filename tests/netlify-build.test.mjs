@@ -70,6 +70,7 @@ test('modules bundled into functions avoid import.meta (breaks Netlify CJS bundl
     'functions/config.mjs',
     'functions/submissions.mjs',
     'functions/support-requests.mjs',
+    'functions/support-admin.mjs',
     'functions/collaboration-requests.mjs',
     'functions/health.mjs',
   ];
@@ -105,6 +106,18 @@ test('support desk ships as its own page with API redirects', async () => {
   const toml = await readFile(resolve(root, 'netlify.toml'), 'utf8');
   assert.match(toml, /from = "\/support-desk"/);
   assert.match(toml, /to = "\/\.netlify\/functions\/support-requests"/);
+});
+
+test('support admin console ships with its routes', async () => {
+  const admin = await readFile(resolve(root, 'netlify', 'support-admin.html'), 'utf8');
+  assert.match(admin, /id="list-panel"/, 'the ticket list must ship in the build');
+  assert.match(admin, /\/api\/support-admin/, 'the page must call the admin API');
+  assert.match(admin, /ddisa\.auth/, 'the admin page must share the directory sign-in session');
+
+  const toml = await readFile(resolve(root, 'netlify.toml'), 'utf8');
+  assert.match(toml, /from = "\/support-admin"/);
+  assert.match(toml, /to = "\/\.netlify\/functions\/support-admin"/);
+  assert.match(toml, /from = "\/api\/config"/, 'the admin page needs /api/config on Netlify');
 });
 
 test('netlify runtime renders organisation pages after hydration', async () => {

@@ -126,11 +126,13 @@ async function serveStatic(requestPath, response) {
   // profile up from the path.
   if (/^org(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/.test(requested)) requested = directoryFile;
   if (/^support-desk\/?$/.test(requested)) requested = 'DDISA - Support Desk.html';
+  if (/^support-admin\/?$/.test(requested)) requested = 'DDISA - Support Admin.html';
   const publicFiles = new Set([
     directoryFile,
     'DDISA - Grantee Directory - Shareable.html',
     'DDISA - Developer Prototype.html',
     'DDISA - Support Desk.html',
+    'DDISA - Support Admin.html',
   ]);
   const isAsset = requested.startsWith('assets/')
     && !requested.includes('\0')
@@ -319,6 +321,59 @@ const server = createServer(async (request, response) => {
         message: 'Your support request has been logged.',
         ...result,
       });
+      return;
+    }
+
+    // Support desk admin console: list tickets, change status, forward to
+    // Trello, sign attachment URLs. Requires a Supabase Auth session whose
+    // user is a member of public.support_admins (401/403 otherwise).
+    if (
+      url.pathname === '/api/support-admin' &&
+      (request.method === 'GET' || request.method === 'POST')
+    ) {
+      let admin;
+      try {
+        admin = await supportDesk.verifyAdmin(request.headers.authorization);
+      } catch (error) {
+        sendJson(response, error.status || 500, {
+          error:
+            (error.status && error.status < 500) || error.expose === true
+              ? error.message
+              : 'The directory could not complete that request.',
+        });
+        return;
+      }
+
+      if (request.method === 'GET') {
+        const attachmentTicket = url.searchParams.get('ticket');
+        if (attachmentTicket) {
+          sendJson(response, 200, await supportDesk.signAttachment(attachmentTicket));
+          return;
+        }
+        sendJson(response, 200, {
+          admin: { email: admin.email },
+          tickets: await supportDesk.listTickets(),
+        });
+        return;
+      }
+
+      if (isRateLimited(request, 'support-admin', 60, 60 * 1000)) {
+        sendJson(response, 429, {
+          error: 'Too many admin actions from this connection. Try again later.',
+        });
+        return;
+      }
+      const body = await readJsonBody(request, 64 * 1024);
+      let result;
+      if (body.action === 'status') {
+        result = await supportDesk.setTicketStatus(body.ticketId, body.status);
+      } else if (body.action === 'forward') {
+        result = await supportDesk.forwardTicketToTrello(body.ticketId);
+      } else {
+        sendJson(response, 400, { error: 'Action must be "status" or "forward".' });
+        return;
+      }
+      sendJson(response, 200, { ok: true, ...result });
       return;
     }
 

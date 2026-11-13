@@ -137,6 +137,10 @@ async function main() {
     resolve(outputDir, 'assets', 'ddi-logo.png'),
   );
 
+  // Support admin console — same static-page pattern as the support desk.
+  const supportAdminHtml = await readFile(resolve(root, 'DDISA - Support Admin.html'), 'utf8');
+  await writeFile(resolve(outputDir, 'support-admin.html'), supportAdminHtml);
+
   console.log(`Wrote ${resolve(outputDir, 'index.html')} (${html.length} bytes)`);
   console.log(
     supabaseUrl && anonKey

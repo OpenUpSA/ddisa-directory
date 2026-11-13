@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { bearerToken, verifySupabaseUser } from './auth.mjs';
 import { cleanCountry, cleanEmail, cleanText } from './validation.mjs';
 
 export const SUPPORT_TYPES = new Set([
@@ -26,6 +27,10 @@ export const ORGANISATION_TYPES = new Set([
   'Other',
 ]);
 
+// Ticket workflow used by the /support-admin console (no DB check constraint;
+// keep the table default 'Received' for rows created before this list).
+export const TICKET_STATUSES = new Set(['Received', 'In progress', 'Forwarded', 'Closed']);
+
 const ATTACHMENT_MIME_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -40,6 +45,12 @@ const ATTACHMENT_MIME_TYPES = new Set([
 ]);
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+function httpError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
 
 function oneOf(value, allowed, label) {
   const text = cleanText(value, { label, max: 120, required: true });
@@ -538,25 +549,26 @@ export class SupportDeskService {
   }
 
   async createTrelloCard(record) {
-    if (!this.env.TRELLO_KEY || !this.env.TRELLO_TOKEN || !this.env.TRELLO_LIST_ID) {
-      return { status: 'not configured' };
-    }
     const card = buildTrelloCard(record);
-    const params = new URLSearchParams({
-      key: this.env.TRELLO_KEY,
-      token: this.env.TRELLO_TOKEN,
-      idList: this.env.TRELLO_LIST_ID,
-      name: card.name,
-      desc: card.desc,
-    });
     try {
-      const response = await this.fetch(`https://api.trello.com/1/cards?${params}`, {
+      // Trello runs through the `trello-card` Supabase Edge Function (script
+      // in supabase/functions/trello-card/index.ts); the TRELLO_* secrets
+      // live in Supabase, not in server/Netlify env.
+      const response = await this.fetch(`${this.supabaseUrl}/functions/v1/trello-card`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.supabaseKey}`,
+          apikey: this.supabaseKey,
+        },
+        body: JSON.stringify({ name: card.name, desc: card.desc }),
         signal: AbortSignal.timeout(20_000),
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.message || `Trello returned ${response.status}.`);
-      return { status: 'created', cardId: body.id || '', url: body.shortUrl || body.url || '' };
+      if (!response.ok) {
+        throw new Error(body.error || `Trello edge function returned ${response.status}.`);
+      }
+      return { status: 'created', cardId: body.cardId || '', url: body.url || '' };
     } catch (error) {
       return { status: 'failed', error: error.message };
     }
@@ -621,11 +633,127 @@ export class SupportDeskService {
     return {
       mode: this.mode,
       supabase: Boolean(this.supabaseUrl && this.supabaseKey),
-      trello: Boolean(this.env.TRELLO_KEY && this.env.TRELLO_TOKEN && this.env.TRELLO_LIST_ID),
-      // The confirmation email is sent by the support-confirmation Edge
-      // Function; this only reports that the backend can invoke it.
+      // Trello and email both run through Supabase Edge Functions
+      // (trello-card / support-confirmation); this only reports that the
+      // backend can invoke them — the per-ticket integrations JSON is the
+      // ground truth for what actually happened.
+      trello: Boolean(this.supabaseUrl && this.supabaseKey),
       email: Boolean(this.supabaseUrl && this.supabaseKey),
       slack: Boolean(this.env.SLACK_SUPPORT_WEBHOOK_URL),
+    };
+  }
+
+  // ------------------------------------------------------------ admin API --
+
+  /**
+   * Verify the caller's Supabase Auth session (same passwordless flow the
+   * grantee sign-in uses) AND membership of public.support_admins.
+   * Throws 401 (no/expired session) or 403 (not an admin).
+   */
+  async verifyAdmin(authorization) {
+    if (!this.supabaseUrl || !this.supabaseKey) {
+      const error = httpError(501, 'The support admin API requires Supabase configuration.');
+      error.expose = true;
+      throw error;
+    }
+    const accessToken = bearerToken(authorization);
+    if (!accessToken) throw httpError(401, 'Sign in to manage the support desk.');
+    const user = await verifySupabaseUser({
+      baseUrl: this.supabaseUrl,
+      apiKey: this.supabaseKey,
+      accessToken,
+      fetchImpl: this.fetch,
+    });
+    if (!user) throw httpError(401, 'Your session has expired. Please sign in again.');
+    const rows = await this.supabaseRequest(
+      `/rest/v1/support_admins?user_id=eq.${encodeURIComponent(user.id)}&select=user_id,email`,
+    );
+    if (!rows?.length) {
+      throw httpError(403, 'Your account does not have support-desk admin access.');
+    }
+    return { id: user.id, email: rows[0].email || user.email };
+  }
+
+  async listTickets() {
+    const rows = await this.supabaseRequest(
+      `/rest/v1/${this.supabaseTable}?select=*&order=submitted_at.desc`,
+    );
+    return (rows || []).map((row) => this.fromSupabase(row));
+  }
+
+  async getTicket(ticketId) {
+    const rows = await this.supabaseRequest(
+      `/rest/v1/${this.supabaseTable}?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*`,
+    );
+    if (!rows?.length) throw httpError(404, 'That support ticket could not be found.');
+    return this.fromSupabase(rows[0]);
+  }
+
+  async setTicketStatus(ticketId, status) {
+    if (!TICKET_STATUSES.has(status)) {
+      throw httpError(400, `Status must be one of: ${[...TICKET_STATUSES].join(', ')}.`);
+    }
+    const rows = await this.supabaseRequest(
+      `/rest/v1/${this.supabaseTable}?ticket_id=eq.${encodeURIComponent(ticketId)}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ status }),
+      },
+    );
+    if (!rows?.length) throw httpError(404, 'That support ticket could not be found.');
+    return { ticketId, status };
+  }
+
+  /**
+   * Forward a ticket to the Trello board through the trello-card Edge
+   * Function. Idempotent: a ticket that already has a card just returns the
+   * stored link.
+   */
+  async forwardTicketToTrello(ticketId) {
+    const ticket = await this.getTicket(ticketId);
+    if (ticket.trelloCardUrl) {
+      return {
+        ticketId,
+        cardId: ticket.trelloCardId,
+        url: ticket.trelloCardUrl,
+        alreadyForwarded: true,
+      };
+    }
+    const outcome = await this.createTrelloCard(ticket);
+    if (outcome.status !== 'created') {
+      const error = new Error(outcome.error || 'The Trello card could not be created.');
+      error.expose = true;
+      throw error;
+    }
+    await this.supabaseRequest(
+      `/rest/v1/${this.supabaseTable}?ticket_id=eq.${encodeURIComponent(ticketId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ trello_card_id: outcome.cardId, trello_card_url: outcome.url }),
+      },
+    );
+    return { ticketId, cardId: outcome.cardId, url: outcome.url, alreadyForwarded: false };
+  }
+
+  /** Short-lived signed URL for a ticket attachment (private bucket). */
+  async signAttachment(ticketId) {
+    const ticket = await this.getTicket(ticketId);
+    const path = ticket.attachment?.storagePath;
+    if (!path) throw httpError(404, 'This ticket has no attachment.');
+    const result = await this.supabaseRequest(
+      `/storage/v1/object/sign/${this.supabaseBucket}/${path.split('/').map(encodeURIComponent).join('/')}`,
+      { method: 'POST', body: JSON.stringify({ expiresIn: 3600 }) },
+    );
+    const signed = String(result?.signedURL || '');
+    if (!signed) {
+      const error = httpError(502, 'The attachment link could not be created.');
+      error.expose = true;
+      throw error;
+    }
+    return {
+      url: signed.startsWith('http') ? signed : `${this.supabaseUrl}/storage/v1${signed}`,
+      expiresIn: 3600,
     };
   }
 }

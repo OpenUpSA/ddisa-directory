@@ -134,20 +134,49 @@ The Support Desk is a standalone page served at **`/support-desk`**
   `.data/support-attachments/`. **Production mode**
   (`SUPPORT_DESK_MODE=production`) writes the `support_requests` table,
   uploads attachments to the private `support-attachments` bucket, creates a
-  Trello card, sends the confirmation email through the
-  `support-confirmation` Supabase Edge Function (Brevo — script in
-  `supabase/functions/support-confirmation/index.ts`) and posts to
+  Trello card through the `trello-card` Supabase Edge Function, sends the
+  confirmation email through the `support-confirmation` Edge Function
+  (Brevo — scripts in `supabase/functions/`) and posts to
   Slack — each outcome is recorded in the ticket's `integrations` JSON.
 - The table and bucket are created by `supabase/schema.sql` (section 12).
 - `GET /api/support/health` reports the current mode and which integrations
   are configured.
 
-Email delivery secrets are set **in Supabase only** (Edge Function secrets,
+Email and Trello secrets are set **in Supabase only** (Edge Function secrets,
 not server/Netlify env):
 
 ```bash
 supabase secrets set BREVO_API_KEY=... SUPPORT_EMAIL_FROM=... SUPPORT_EMAIL_REPLY_TO=...
+supabase secrets set TRELLO_KEY=... TRELLO_TOKEN=... TRELLO_LIST_ID=...
 ```
+
+## Support admin console
+
+**`/support-admin`** (`DDISA - Support Admin.html`) is the team's view of the
+support queue:
+
+- Lists every `support_requests` ticket (newest first) with status filter,
+  per-row status changes (**Received / In progress / Forwarded / Closed**),
+  **Forward to Trello** (idempotent — stores the card link on the ticket), a
+  full detail dialog, a signed one-hour **attachment link**, and a
+  **mailto:** pre-filled with the ticket number.
+- Sign-in uses the same passwordless Supabase Auth flow and the **same
+  browser session** as the directory (`ddisa.auth`).
+- Authorization = membership of `public.support_admins`. Grant access with
+  (run after creating the user in Authentication → Users):
+
+```sql
+insert into public.support_admins (user_id, email)
+select id, email from auth.users
+where lower(email) = 'you@example.org'
+on conflict (user_id) do nothing;
+```
+
+  Revoke by deleting the row (deleting the auth user cascades).
+- API: `GET /api/support-admin` (tickets), `GET …?ticket=<id>` (signed
+  attachment URL), `POST … {action:'status'|'forward', …}` — all require the
+  admin's `Authorization: Bearer <jwt>` (401 without a session, 403 without
+  membership). On Netlify these rewrite to the `support-admin` function.
 
 Production mode needs only the Supabase variables — Trello and Slack are
 optional (their `integrations` entries report `not configured` until set),

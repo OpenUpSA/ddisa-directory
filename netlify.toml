@@ -41,3 +41,20 @@
   from = "/api/support-requests"
   to = "/.netlify/functions/support-requests"
   status = 200
+
+# Support admin console: static page + admin API + shared public config
+# (the admin page fetches /api/config when window.DDISA_ENV is absent).
+[[redirects]]
+  from = "/support-admin"
+  to = "/support-admin.html"
+  status = 200
+
+[[redirects]]
+  from = "/api/support-admin"
+  to = "/.netlify/functions/support-admin"
+  status = 200
+
+[[redirects]]
+  from = "/api/config"
+  to = "/.netlify/functions/config"
+  status = 200

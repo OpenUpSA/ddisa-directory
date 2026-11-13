@@ -417,3 +417,29 @@ on conflict (id) do update set
 
 -- No storage.objects policy is created intentionally: only the server-side
 -- service-role key uploads to and reads from this bucket.
+
+-- ----------------------------------------------------------------------------
+-- 13. Support Desk administrators
+--     Membership of this table is what the /support-admin console checks
+--     after verifying the same Supabase Auth session used by grantee
+--     sign-in. Grant yourself access (after creating your user in
+--     Authentication → Users):
+--
+--       insert into public.support_admins (user_id, email)
+--       select id, email from auth.users
+--       where lower(email) = 'you@example.org'
+--       on conflict (user_id) do nothing;
+--
+--     Revoke by deleting the row (or the auth user — cascade).
+-- ----------------------------------------------------------------------------
+create table if not exists public.support_admins (
+  user_id    uuid primary key references auth.users (id) on delete cascade,
+  email      text not null,
+  created_at timestamptz not null default now()
+);
+
+-- The browser never reads this table: the server verifies the session with
+-- GoTrue and then checks membership with the service-role key.
+alter table public.support_admins enable row level security;
+revoke all on table public.support_admins from anon, authenticated;
+grant all on table public.support_admins to service_role;

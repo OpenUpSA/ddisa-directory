@@ -1,0 +1,936 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>DDISA Support Admin</title>
+  <style>
+    :root {
+      --ink: #061329;
+      --green: #007e70;
+      --green-dark: #00675c;
+      --lime: #35e6bd;
+      --paper: #f5f7fb;
+      --line: #dce3ee;
+      --muted: #57667a;
+      --soft: #eef3f9;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    button, input, select { font: inherit; }
+    button, a, input, select { -webkit-tap-highlight-color: transparent; }
+    button { cursor: pointer; }
+    a { color: inherit; }
+
+    /* Non-browser scrollbars everywhere (matches the directory). */
+    * { scrollbar-width: thin; scrollbar-color: #b9c6d8 transparent; }
+    *::-webkit-scrollbar { width: 10px; height: 10px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb { background: #b9c6d8; border: 2px solid transparent; border-radius: 8px; background-clip: content-box; }
+    *::-webkit-scrollbar-thumb:hover { background: #93a7c0; border: 2px solid transparent; background-clip: content-box; }
+    *::-webkit-scrollbar-corner { background: transparent; }
+
+    /* Header + footer rules copied verbatim from DDISA - Grantee Directory.html
+       so every page shares the exact same chrome. */
+    header {
+      height: 94px;
+      border-bottom: 1px solid var(--line);
+      background: #061329;
+      color: white;
+      border-color: #1f2b3e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 6%;
+    }
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 23px;
+      letter-spacing: 1px;
+      color: white;
+    }
+    .brandmark {
+      display: grid;
+      place-items: center;
+      background: #35e6bd;
+      color: #061329;
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      font-size: 39px;
+      line-height: 1;
+    }
+    .subbrand { display: block; font-size: 9px; letter-spacing: 2px; margin-top: 5px; color: #c3cddd; }
+    .header-label { color: #c3cddd; font-size: 12px; }
+    .private {
+      border: 1px solid #4c5a70;
+      padding: 8px 13px;
+      border-radius: 30px;
+      color: #e3eaf5;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    main { max-width: 1400px; padding: 0 6%; margin: auto; }
+    footer {
+      max-width: 1400px;
+      margin: 60px auto 0;
+      padding: 25px 6%;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin: 44px 0 22px;
+      flex-wrap: wrap;
+    }
+    .eyebrow {
+      margin: 0;
+      color: var(--green);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    h1 { margin: 8px 0 0; font-size: 34px; font-weight: 500; letter-spacing: -1px; }
+    .sub { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .toolbar label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .toolbar select {
+      min-height: 38px;
+      border: 1px solid #cfd8e5;
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: white;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .who { font-size: 11px; color: var(--muted); }
+
+    .msg {
+      display: none;
+      margin: 0 0 16px;
+      padding: 11px 13px;
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .msg.show { display: block; }
+    .msg.error { border: 1px solid #f0b8b4; background: #fff1f0; color: #7a1a12; }
+    .msg.ok { border: 1px solid #b8ded4; background: #edf8f5; color: #195c52; }
+
+    .state-card {
+      margin: 46px auto 10px;
+      padding: 36px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: white;
+      text-align: center;
+      max-width: 560px;
+      box-shadow: 0 18px 50px #06132912;
+    }
+    .state-card h2 { margin: 0 0 8px; font-size: 21px; letter-spacing: -.4px; }
+    .state-card p { margin: 0 0 20px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .state-card[hidden], #list-panel[hidden] { display: none; }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: white;
+      box-shadow: 0 18px 50px #06132912;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th {
+      text-align: left;
+      background: #f8fafc;
+      font-size: 10px;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    td { padding: 12px 14px; border-bottom: 1px solid #edf1f6; vertical-align: top; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #f8fbfa; }
+    .tid { font-weight: 800; white-space: nowrap; font-size: 11.5px; }
+    .muted { color: var(--muted); white-space: nowrap; font-size: 11.5px; }
+    .strong { font-weight: 700; }
+    .cell-sub { display: block; margin-top: 2px; color: var(--muted); font-size: 10.5px; }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 30px;
+      font-size: 10.5px;
+      font-weight: 800;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+    .pill-received { background: #eef3fb; border-color: #d5e0f0; color: #3c587d; }
+    .pill-in-progress { background: #fff8dc; border-color: #ecd36a; color: #805800; }
+    .pill-forwarded { background: #e7f0ff; border-color: #bcd3ff; color: #2d5bb8; }
+    .pill-closed { background: #edf8f5; border-color: #b8ded4; color: #195c52; }
+
+    .row-cell { text-align: right; white-space: nowrap; }
+    .link-btn {
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .link-btn:hover { border-color: var(--green); color: var(--green); }
+    .link-btn:disabled { opacity: .55; cursor: default; }
+    .status-select {
+      display: block;
+      margin-top: 6px;
+      border: 1px solid #cfd8e5;
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: white;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--ink);
+      max-width: 130px;
+    }
+    a.trello-link { color: var(--green); font-weight: 800; font-size: 11.5px; text-decoration: none; white-space: nowrap; }
+    a.trello-link:hover { text-decoration: underline; }
+    .empty { padding: 44px 20px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    dialog {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 0;
+      max-width: 760px;
+      width: calc(100% - 32px);
+      max-height: 88vh;
+      overflow-y: auto;
+      background: white;
+      color: var(--ink);
+    }
+    dialog::backdrop { background: #061329b8; backdrop-filter: blur(3px); }
+    #signin-form { max-width: 440px; }
+    .dlg-top {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 15px 22px;
+      background: white;
+      border-bottom: 1px solid var(--line);
+    }
+    .dlg-top h2 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.5px; }
+    .dlg-close {
+      border: 0;
+      background: var(--soft);
+      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      font-size: 20px;
+      line-height: 1;
+      color: var(--ink);
+    }
+    .dlg-close:hover { background: #e2eaf3; }
+    .dlg-body { padding: 22px 26px 28px; }
+    .note {
+      margin: 0;
+      padding: 11px 13px;
+      border: 1px solid #d9e4ee;
+      background: #f0f5f9;
+      border-radius: 7px;
+      color: #41556b;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .field { display: block; margin-top: 15px; font-size: 12px; font-weight: 700; color: #25364f; }
+    .field input {
+      display: block;
+      width: 100%;
+      min-height: 44px;
+      margin-top: 6px;
+      padding: 11px 12px;
+      border: 1px solid #cfd8e5;
+      border-radius: 7px;
+      background: white;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .field input:focus {
+      outline: 0;
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px #007e7018;
+    }
+    #signin-code { text-align: center; letter-spacing: .4em; font-size: 18px; font-weight: 700; }
+    .field[hidden] { display: none; }
+    .dlg-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .btn-primary {
+      min-height: 44px;
+      border: 1px solid var(--green);
+      background: var(--green);
+      color: white;
+      border-radius: 7px;
+      padding: 11px 18px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .btn-primary:hover { background: var(--green-dark); border-color: var(--green-dark); }
+    .btn-primary:disabled { opacity: .6; cursor: default; }
+    .btn-ghost {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--ink);
+      border-radius: 7px;
+      padding: 9px 14px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .btn-ghost:hover { border-color: var(--green); color: var(--green); }
+    .wide { width: 100%; margin-top: 16px; }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 24px;
+      margin-top: 4px;
+    }
+    .detail-grid .full { grid-column: 1 / -1; }
+    .dt {
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .dd { margin-top: 3px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .dd a { color: var(--green); font-weight: 700; }
+    .dd code { font-size: 11px; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+
+    :focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
+
+    @media (max-width: 760px) {
+      .hide-sm { display: none; }
+      .page-head { display: block; }
+      .toolbar { margin-top: 16px; }
+      .detail-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 27px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="./"><span class="brandmark">d.</span><span>DDISA<span class="subbrand">KNOWLEDGE HUB</span></span></a>
+    <span class="header-label">People. Ideas. Collective impact.</span>
+    <span class="private">Support Admin</span>
+  </header>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">DDISA Support Desk</p>
+        <h1>Support requests</h1>
+        <p class="sub" id="counts">Loading…</p>
+      </div>
+      <div class="toolbar">
+        <label for="filter-status">Status
+          <select id="filter-status">
+            <option value="">All</option>
+            <option>Received</option>
+            <option>In progress</option>
+            <option>Forwarded</option>
+            <option>Closed</option>
+          </select>
+        </label>
+        <button class="btn-ghost" id="refresh" type="button">Refresh</button>
+        <button class="btn-ghost" id="signout" type="button" hidden>Sign out</button>
+        <span class="who" id="who"></span>
+      </div>
+    </div>
+
+    <p class="msg" id="action-status" role="alert" aria-live="polite"></p>
+
+    <section class="state-card" id="gate">
+      <h2 id="gate-title">Sign in to manage support requests</h2>
+      <p id="gate-copy">Sign in with the same DDISA account used for the directory. An administrator must add your account to the <strong>support_admins</strong> table before you get access.</p>
+      <button class="btn-primary" id="gate-action" type="button">Sign in</button>
+    </section>
+
+    <section class="state-card" id="denied" hidden>
+      <h2>Not an administrator</h2>
+      <p id="denied-copy">Your account is signed in but does not have support-desk admin access. Ask an administrator to run the support_admins grant for your email.</p>
+      <button class="btn-ghost" id="denied-signout" type="button">Sign out</button>
+    </section>
+
+    <section id="list-panel" hidden>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Ticket</th>
+              <th>Submitted</th>
+              <th>Organisation</th>
+              <th class="hide-sm">Request</th>
+              <th>Status</th>
+              <th class="hide-sm">Trello</th>
+              <th aria-label="Actions"></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="empty" id="empty" hidden>No support tickets match this filter.</div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="signin-form" aria-labelledby="signin-title">
+    <div class="dlg-top">
+      <h2 id="signin-title">Support admin sign in</h2>
+      <button id="signin-close" class="dlg-close" type="button" aria-label="Close sign-in">×</button>
+    </div>
+    <div class="dlg-body">
+      <p class="note">The same passwordless sign-in as the directory: we’ll email you a 6-digit code — or click the link in the email to sign in instantly. Your account must be listed in <strong>support_admins</strong>.</p>
+      <label class="field" for="signin-email">Email
+        <input id="signin-email" type="email" autocomplete="username" maxlength="254" required placeholder="admin@organisation.org">
+      </label>
+      <label class="field" id="signin-code-row" for="signin-code" hidden>Sign-in code
+        <input id="signin-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456">
+      </label>
+      <p class="msg" id="signin-msg" role="alert" aria-live="polite"></p>
+      <button class="btn-primary wide" id="signin-submit" type="button">Email me a code</button>
+    </div>
+  </dialog>
+
+  <dialog id="ticket-dialog" aria-labelledby="td-id">
+    <div class="dlg-top">
+      <h2 id="td-id">Ticket</h2>
+      <button id="td-close" class="dlg-close" type="button" aria-label="Close ticket">×</button>
+    </div>
+    <div class="dlg-body">
+      <p class="msg" id="td-msg" role="alert" aria-live="polite"></p>
+      <div class="detail-grid" id="td-fields"></div>
+      <div class="dlg-actions" id="td-actions"></div>
+    </div>
+  </dialog>
+
+  <footer>
+    <span><b>DDISA</b> · Digital Democracy Initiative Sub-Saharan Africa</span>
+    <span>Support Desk · Administration console</span>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    // Keep in sync with TICKET_STATUSES in server/lib/support-desk.mjs.
+    const STATUSES = ['Received', 'In progress', 'Forwarded', 'Closed'];
+    const statusClass = (s) => 'pill pill-' + String(s || 'Received').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    let tickets = [];
+    let otpSentTo = '';
+    let currentAdmin = '';
+
+    // -------------------------------------------------------------- auth ----
+    // Same passwordless Supabase flow and the SAME session key as the
+    // directory, so signing in once works across both pages.
+    const authStorageKey = 'ddisa.auth';
+    let supabaseConfig;
+
+    async function loadSupabaseConfig() {
+      if (supabaseConfig !== undefined) return supabaseConfig;
+      const env = window.DDISA_ENV || {};
+      const fromEnv = { url: String(env.SUPABASE_URL || '').replace(/\/+$/, ''), anonKey: env.SUPABASE_ANON_KEY || '' };
+      if (fromEnv.url && !fromEnv.url.includes('YOUR-PROJECT') && fromEnv.anonKey) {
+        supabaseConfig = fromEnv;
+        return supabaseConfig;
+      }
+      try {
+        const response = await fetch('/api/config', { headers: { Accept: 'application/json' } });
+        const result = await response.json().catch(() => ({}));
+        supabaseConfig = response.ok && result.supabaseUrl
+          ? { url: String(result.supabaseUrl).replace(/\/+$/, ''), anonKey: result.supabaseAnonKey || '' }
+          : null;
+      } catch {
+        supabaseConfig = null;
+      }
+      return supabaseConfig;
+    }
+
+    function readAuthSession() {
+      try { return JSON.parse(localStorage.getItem(authStorageKey) || 'null'); } catch { return null; }
+    }
+    function writeAuthSession(session) {
+      try {
+        if (session) localStorage.setItem(authStorageKey, JSON.stringify(session));
+        else localStorage.removeItem(authStorageKey);
+      } catch { /* private mode */ }
+    }
+
+    async function getAccessToken() {
+      const session = readAuthSession();
+      if (!session || !session.access_token) return null;
+      if (Number(session.expires_at || 0) > Date.now() + 5000) return session.access_token;
+      const config = await loadSupabaseConfig();
+      if (!config || !config.url || !config.anonKey || !session.refresh_token) {
+        writeAuthSession(null);
+        return null;
+      }
+      try {
+        const response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: config.anonKey },
+          body: JSON.stringify({ refresh_token: session.refresh_token }),
+        });
+        if (!response.ok) { writeAuthSession(null); return null; }
+        const result = await response.json();
+        writeAuthSession({
+          access_token: result.access_token,
+          refresh_token: result.refresh_token || session.refresh_token,
+          expires_at: Date.now() + Number(result.expires_in || 3600) * 1000,
+          email: result.user?.email || session.email || '',
+        });
+        return readAuthSession().access_token;
+      } catch {
+        return null;
+      }
+    }
+
+    async function requestSignInCode(email) {
+      const config = await loadSupabaseConfig();
+      if (!config || !config.url || !config.anonKey) {
+        throw new Error('Directory sign-in is not configured for this deployment yet.');
+      }
+      let response;
+      try {
+        response = await fetch(`${config.url}/auth/v1/otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: config.anonKey },
+          body: JSON.stringify({ email, create_user: false }),
+        });
+      } catch {
+        throw new Error('We could not reach the sign-in service. Check your connection and try again.');
+      }
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        const detail = `${result.msg || ''} ${result.error_description || ''} ${result.error_code || ''}`;
+        if (response.status === 429) throw new Error('Too many sign-in requests. Wait a few minutes and try again.');
+        if (/user[_ ]not[_ ]found/i.test(detail)) throw new Error('No account exists for that address. Ask an administrator for access.');
+        throw new Error('The sign-in email could not be sent. Try again shortly.');
+      }
+      otpSentTo = email;
+    }
+
+    async function verifySignInCode(email, code) {
+      const config = await loadSupabaseConfig();
+      if (!config || !config.url || !config.anonKey) {
+        throw new Error('Directory sign-in is not configured for this deployment yet.');
+      }
+      let lastResult = null;
+      let lastStatus = 0;
+      for (const type of ['email', 'magiclink']) {
+        let response;
+        try {
+          response = await fetch(`${config.url}/auth/v1/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: config.anonKey },
+            body: JSON.stringify({ type, email, token: code }),
+          });
+        } catch {
+          throw new Error('We could not reach the sign-in service. Check your connection and try again.');
+        }
+        lastStatus = response.status;
+        lastResult = await response.json().catch(() => ({}));
+        if (response.ok) {
+          writeAuthSession({
+            access_token: lastResult.access_token,
+            refresh_token: lastResult.refresh_token,
+            expires_at: Date.now() + Number(lastResult.expires_in || 3600) * 1000,
+            email: lastResult.user?.email || email,
+          });
+          otpSentTo = '';
+          return;
+        }
+        if (response.status === 429) break;
+      }
+      const detail = `${lastResult?.msg || ''} ${lastResult?.error_description || ''} ${lastResult?.error_code || ''}`;
+      if (lastStatus === 429) throw new Error('Too many sign-in attempts. Wait a few minutes and try again.');
+      if (/expired/i.test(detail)) throw new Error('That code has expired. Send a new one.');
+      if (/invalid|does not match|not correct/i.test(detail)) throw new Error('That code is not correct. Check the email and try again.');
+      throw new Error('That code could not be verified. Send a new code and try again.');
+    }
+
+    function captureAuthRedirect() {
+      if (!location.hash) return;
+      const params = new URLSearchParams(location.hash.slice(1));
+      if (params.get('error')) {
+        history.replaceState(null, '', location.pathname + location.search);
+        return;
+      }
+      const access = params.get('access_token');
+      const refresh = params.get('refresh_token');
+      if (!access || !refresh) return;
+      writeAuthSession({
+        access_token: access,
+        refresh_token: refresh,
+        expires_at: Date.now() + Number(params.get('expires_in') || 3600) * 1000,
+        email: '',
+      });
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+
+    function signinMsg(message, kind) {
+      const el = $('signin-msg');
+      el.textContent = message || '';
+      el.className = 'msg' + (message ? ' show ' + (kind || 'error') : '');
+    }
+    function actionMsg(message, kind) {
+      const el = $('action-status');
+      el.textContent = message || '';
+      el.className = 'msg' + (message ? ' show ' + (kind || 'error') : '');
+    }
+    function openSignIn() {
+      otpSentTo = '';
+      $('signin-code-row').hidden = true;
+      $('signin-code').value = '';
+      $('signin-submit').textContent = 'Email me a code';
+      signinMsg('');
+      $('signin-form').showModal();
+      $('signin-email').focus();
+    }
+
+    $('gate-action').addEventListener('click', () => {
+      if (readAuthSession()) loadTickets();
+      else openSignIn();
+    });
+    $('signin-close').addEventListener('click', () => $('signin-form').close());
+    $('signin-email').addEventListener('input', () => {
+      if (otpSentTo && $('signin-email').value.trim() !== otpSentTo) {
+        otpSentTo = '';
+        $('signin-code-row').hidden = true;
+        $('signin-code').value = '';
+        $('signin-submit').textContent = 'Email me a code';
+        signinMsg('');
+      }
+    });
+    $('signin-submit').addEventListener('click', async () => {
+      const email = $('signin-email').value.trim();
+      const button = $('signin-submit');
+      button.disabled = true;
+      try {
+        if ($('signin-code-row').hidden) {
+          signinMsg('Sending your sign-in code…', 'ok');
+          await requestSignInCode(email);
+          $('signin-code-row').hidden = false;
+          button.textContent = 'Verify code & sign in';
+          signinMsg(`Code sent to ${email}. Enter it below — or click the link in the email to sign in instantly.`, 'ok');
+          $('signin-code').focus();
+        } else {
+          const code = $('signin-code').value.trim();
+          if (!code) { signinMsg('Enter the code from your email.'); return; }
+          signinMsg('Verifying…', 'ok');
+          await verifySignInCode(email, code);
+          signinMsg('');
+          $('signin-form').close();
+          await loadTickets();
+        }
+      } catch (error) {
+        signinMsg(error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // --------------------------------------------------------- admin API ----
+    async function adminFetch(path) {
+      const token = await getAccessToken();
+      if (!token) {
+        const error = new Error('Your session has expired. Please sign in again.');
+        error.status = 401;
+        throw error;
+      }
+      const response = await fetch(path, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(result.error || `Request failed (${response.status}).`);
+        error.status = response.status;
+        throw error;
+      }
+      return result;
+    }
+
+    async function adminPost(body) {
+      const token = await getAccessToken();
+      if (!token) {
+        const error = new Error('Your session has expired. Please sign in again.');
+        error.status = 401;
+        throw error;
+      }
+      const response = await fetch('/api/support-admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(result.error || `Request failed (${response.status}).`);
+        error.status = response.status;
+        throw error;
+      }
+      return result;
+    }
+
+    function showGate(title, copy) {
+      $('gate-title').textContent = title;
+      $('gate-copy').innerHTML = copy;
+      $('gate').hidden = false;
+      $('denied').hidden = true;
+      $('list-panel').hidden = true;
+      $('signout').hidden = true;
+      $('counts').textContent = '';
+      $('who').textContent = '';
+    }
+
+    async function loadTickets() {
+      actionMsg('');
+      try {
+        const result = await adminFetch('/api/support-admin');
+        tickets = Array.isArray(result.tickets) ? result.tickets : [];
+        currentAdmin = result.admin?.email || '';
+        $('gate').hidden = true;
+        $('denied').hidden = true;
+        $('list-panel').hidden = false;
+        $('signout').hidden = false;
+        $('who').textContent = currentAdmin ? `Signed in as ${currentAdmin}` : '';
+        render();
+      } catch (error) {
+        if (error.status === 403) {
+          $('gate').hidden = true;
+          $('denied').hidden = false;
+          $('list-panel').hidden = true;
+          $('signout').hidden = false;
+          $('denied-copy').textContent = error.message;
+          $('counts').textContent = '';
+          $('who').textContent = readAuthSession()?.email ? `Signed in as ${readAuthSession().email}` : '';
+        } else if (error.status === 401) {
+          showGate('Sign in to manage support requests', esc(error.message) + ' Use the same DDISA account used for the directory; an administrator must add it to <strong>support_admins</strong>.');
+        } else {
+          showGate('Could not load support requests', esc(error.message) + ' If this keeps happening, check the Netlify function logs for <code>support-admin</code>.');
+        }
+      }
+    }
+
+    function render() {
+      const filter = $('filter-status').value;
+      const visible = tickets.filter((t) => !filter || t.status === filter);
+      $('counts').textContent = filter
+        ? `Showing ${visible.length} of ${tickets.length} tickets`
+        : `${tickets.length} ${tickets.length === 1 ? 'ticket' : 'tickets'}`;
+      $('empty').hidden = visible.length > 0;
+      $('rows').innerHTML = visible.map((t) => {
+        const forwarded = t.trelloCardUrl
+          ? `<a class="trello-link" href="${esc(t.trelloCardUrl)}" target="_blank" rel="noopener">Open card ↗</a>`
+          : `<button class="link-btn forward" data-ticket="${esc(t.ticketId)}" type="button">Forward</button>`;
+        return `<tr data-ticket="${esc(t.ticketId)}">
+          <td class="tid">${esc(t.ticketId)}</td>
+          <td class="muted">${esc(formatDate(t.submittedAt))}</td>
+          <td><span class="strong">${esc(t.organisation)}</span><span class="cell-sub">${esc(t.fullName)} · ${esc(t.email)}</span></td>
+          <td class="hide-sm"><span class="strong">${esc(t.supportType)}</span><span class="cell-sub">Goal: ${esc(t.goal)}</span></td>
+          <td>
+            <span class="${statusClass(t.status)}">${esc(t.status)}</span>
+            <select class="status-select" data-ticket="${esc(t.ticketId)}" aria-label="Change status for ${esc(t.ticketId)}">
+              ${STATUSES.map((s) => `<option${s === t.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+            </select>
+          </td>
+          <td class="hide-sm">${forwarded}</td>
+          <td class="row-cell"><button class="link-btn view" data-ticket="${esc(t.ticketId)}" type="button">View</button></td>
+        </tr>`;
+      }).join('');
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString();
+    }
+
+    async function doStatus(ticketId, status) {
+      actionMsg('');
+      try {
+        await adminPost({ action: 'status', ticketId, status });
+        const ticket = tickets.find((t) => t.ticketId === ticketId);
+        if (ticket) ticket.status = status;
+        render();
+        actionMsg(`${ticketId} → ${status}`, 'ok');
+      } catch (error) {
+        render(); // revert the select
+        if (error.status === 401) await loadTickets();
+        actionMsg(error.message, 'error');
+      }
+    }
+
+    async function doForward(ticketId, button) {
+      actionMsg('');
+      if (button) { button.disabled = true; button.textContent = 'Forwarding…'; }
+      try {
+        const result = await adminPost({ action: 'forward', ticketId });
+        const ticket = tickets.find((t) => t.ticketId === ticketId);
+        if (ticket) {
+          ticket.trelloCardId = result.cardId;
+          ticket.trelloCardUrl = result.url;
+        }
+        render();
+        actionMsg(result.alreadyForwarded ? `${ticketId} already has a Trello card.` : `${ticketId} forwarded to Trello — ${result.url}`, 'ok');
+      } catch (error) {
+        render();
+        actionMsg(error.message, 'error');
+      }
+    }
+
+    $('rows').addEventListener('click', (event) => {
+      const forward = event.target.closest('.forward');
+      if (forward) { doForward(forward.dataset.ticket, forward); return; }
+      const view = event.target.closest('.view');
+      if (view) openTicket(view.dataset.ticket);
+    });
+    $('rows').addEventListener('change', (event) => {
+      const select = event.target.closest('.status-select');
+      if (select) doStatus(select.dataset.ticket, select.value);
+    });
+    $('filter-status').addEventListener('change', render);
+    $('refresh').addEventListener('click', () => loadTickets());
+    $('signout').addEventListener('click', () => { writeAuthSession(null); showGate('Sign in to manage support requests', 'Signed out. Sign in with the same DDISA account used for the directory; an administrator must add it to <strong>support_admins</strong>.'); });
+    $('denied-signout').addEventListener('click', () => { writeAuthSession(null); showGate('Sign in to manage support requests', 'Signed out. Sign in with the same DDISA account used for the directory; an administrator must add it to <strong>support_admins</strong>.'); });
+
+    // -------------------------------------------------------- detail view ----
+    function field(label, value, full) {
+      if (value === null || value === undefined || value === '') return '';
+      return `<div${full ? ' class="full"' : ''}><div class="dt">${esc(label)}</div><div class="dd">${value}</div></div>`;
+    }
+    function plain(label, value, full) { return field(label, esc(value), full); }
+
+    function openTicket(ticketId) {
+      const t = tickets.find((row) => row.ticketId === ticketId);
+      if (!t) return;
+      $('td-id').textContent = t.ticketId;
+      $('td-msg').className = 'msg';
+      const orgType = t.organisationTypeOther ? `${t.organisationType}: ${t.organisationTypeOther}` : t.organisationType;
+      const support = t.supportTypeOther ? `${t.supportType}: ${t.supportTypeOther}` : t.supportType;
+      const goal = t.goalOther ? `${t.goal}: ${t.goalOther}` : t.goal;
+      const integrations = Object.entries(t.integrations || {})
+        .map(([key, value]) => `${esc(key)}: ${esc(typeof value === 'string' ? value : value?.status || 'unknown')}`)
+        .join(' · ');
+      $('td-fields').innerHTML = [
+        plain('Ticket', t.ticketId),
+        plain('Submitted', formatDate(t.submittedAt)),
+        plain('Organisation', t.organisation),
+        plain('Country', t.country),
+        plain('Contact', t.fullName),
+        `<div><div class="dt">Email</div><div class="dd"><a href="mailto:${esc(t.email)}?subject=${encodeURIComponent(`[${t.ticketId}] DDISA support`)}">${esc(t.email)}</a></div></div>`,
+        plain('Organisation type', orgType),
+        plain('Type of support', support),
+        plain('Goal', goal),
+        field('Description', esc(t.description), true),
+        plain('What they tried', t.triedSoFar, true),
+        plain('Attachment', t.attachment?.filename || ''),
+        plain('Integrations', integrations, true),
+        plain('Source', t.source),
+      ].join('');
+      const attachmentBtn = t.attachment
+        ? `<button class="btn-ghost" id="td-attachment" type="button">Open attachment ↗</button>`
+        : '';
+      const trelloBtn = t.trelloCardUrl
+        ? `<a class="btn-ghost" href="${esc(t.trelloCardUrl)}" target="_blank" rel="noopener" style="text-decoration:none">Open Trello card ↗</a>`
+        : `<button class="btn-ghost" id="td-forward" type="button">Forward to Trello</button>`;
+      $('td-actions').innerHTML = [
+        attachmentBtn,
+        `<a class="btn-ghost" href="mailto:${esc(t.email)}?subject=${encodeURIComponent(`[${t.ticketId}] DDISA support`)}" style="text-decoration:none">Email requester ↗</a>`,
+        trelloBtn,
+        `<button class="btn-ghost" id="td-close-btn" type="button">Close</button>`,
+      ].join('');
+      const attach = $('td-attachment');
+      if (attach) attach.addEventListener('click', () => openAttachment(t.ticketId));
+      const fwd = $('td-forward');
+      if (fwd) fwd.addEventListener('click', async () => {
+        fwd.disabled = true;
+        fwd.textContent = 'Forwarding…';
+        await doForward(t.ticketId, null);
+        const updated = tickets.find((row) => row.ticketId === t.ticketId);
+        if (updated?.trelloCardUrl) openTicket(t.ticketId); // refresh actions
+      });
+      $('td-close-btn').addEventListener('click', () => $('ticket-dialog').close());
+      $('ticket-dialog').showModal();
+    }
+
+    async function openAttachment(ticketId) {
+      setTdMsg('');
+      try {
+        const result = await adminFetch(`/api/support-admin?ticket=${encodeURIComponent(ticketId)}`);
+        window.open(result.url, '_blank', 'noopener');
+      } catch (error) {
+        setTdMsg(error.message, 'error');
+      }
+    }
+    function setTdMsg(message, kind) {
+      const el = $('td-msg');
+      el.textContent = message || '';
+      el.className = 'msg' + (message ? ' show ' + (kind || 'error') : '');
+    }
+    $('td-close').addEventListener('click', () => $('ticket-dialog').close());
+
+    // ---------------------------------------------------------------- boot ----
+    captureAuthRedirect();
+    if (readAuthSession()) {
+      loadTickets();
+    } else {
+      showGate('Sign in to manage support requests', 'Sign in with the same DDISA account used for the directory. An administrator must add your account to the <strong>support_admins</strong> table before you get access.');
+    }
+  </script>
+</body>
+</html>
