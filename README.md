@@ -75,6 +75,7 @@ Environment variables**:
 | `SUPABASE_URL` | build + functions | Project URL (Supabase → Settings → API) |
 | `SUPABASE_ANON_KEY` | build → `config.js` | Public read key for the browser |
 | `SUPABASE_SERVICE_ROLE_KEY` | functions only | Server-side writes; never shipped to the browser |
+| `TRELLO_BOARD_EMAIL` | functions + server | Trello list's "Upload by email" address — forwards tickets with no API keys |
 
 Trigger a deploy so the build injects the anon key into `config.js`. Then run
 `npm run upload:assets` once from your machine so the seeded
@@ -133,21 +134,23 @@ The Support Desk is a standalone page served at **`/support-desk`**
   `.data/support-requests.json` and attachments to
   `.data/support-attachments/`. **Production mode**
   (`SUPPORT_DESK_MODE=production`) writes the `support_requests` table,
-  uploads attachments to the private `support-attachments` bucket, creates a
-  Trello card through the `trello-card` Supabase Edge Function, sends the
-  confirmation email through the `support-confirmation` Edge Function
-  (Brevo — scripts in `supabase/functions/`) and posts to
+  uploads attachments to the private `support-attachments` bucket, forwards
+  each ticket to Trello **by email** (Trello's "Upload by email" address —
+  no API keys), sends the requester's confirmation through the
+  `support-confirmation` Edge Function (Brevo — script in
+  `supabase/functions/`) and posts to
   Slack — each outcome is recorded in the ticket's `integrations` JSON.
 - The table and bucket are created by `supabase/schema.sql` (section 12).
 - `GET /api/support/health` reports the current mode and which integrations
   are configured.
 
-Email and Trello secrets are set **in Supabase only** (Edge Function secrets,
-not server/Netlify env):
+Email secrets are set **in Supabase only** (Edge Function secrets, not
+server/Netlify env); Trello needs one server env var instead of any keys:
 
 ```bash
 supabase secrets set BREVO_API_KEY=... SUPPORT_EMAIL_FROM=... SUPPORT_EMAIL_REPLY_TO=...
-supabase secrets set TRELLO_KEY=... TRELLO_TOKEN=... TRELLO_LIST_ID=...
+# Netlify/env: the list's "Upload by email" address (Board → … → Upload by email)
+TRELLO_BOARD_EMAIL=list-abc123@boards.trello.com
 ```
 
 ## Support admin console
@@ -157,7 +160,8 @@ support queue:
 
 - Lists every `support_requests` ticket (newest first) with status filter,
   per-row status changes (**Received / In progress / Forwarded / Closed**),
-  **Forward to Trello** (idempotent — stores the card link on the ticket), a
+  **Forward to Trello** (idempotent — emails the card to the board's
+  upload-by-email address), a
   full detail dialog, a signed one-hour **attachment link**, and a
   **mailto:** pre-filled with the ticket number.
 - Sign-in uses the same passwordless Supabase Auth flow and the **same

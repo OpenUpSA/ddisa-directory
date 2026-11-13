@@ -471,6 +471,9 @@
     // Keep in sync with TICKET_STATUSES in server/lib/support-desk.mjs.
     const STATUSES = ['Received', 'In progress', 'Forwarded', 'Closed'];
     const statusClass = (s) => 'pill pill-' + String(s || 'Received').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    // Email forwards carry no card URL — the stored integrations outcome is
+    // the marker (legacy tickets may have trello_card_url instead).
+    const isForwarded = (t) => Boolean(t.trelloCardUrl) || ['sent', 'created'].includes(t.integrations?.trello?.status);
 
     let tickets = [];
     let otpSentTo = '';
@@ -775,9 +778,11 @@
         : `${tickets.length} ${tickets.length === 1 ? 'ticket' : 'tickets'}`;
       $('empty').hidden = visible.length > 0;
       $('rows').innerHTML = visible.map((t) => {
-        const forwarded = t.trelloCardUrl
+        const trelloState = t.trelloCardUrl
           ? `<a class="trello-link" href="${esc(t.trelloCardUrl)}" target="_blank" rel="noopener">Open card ↗</a>`
-          : `<button class="link-btn forward" data-ticket="${esc(t.ticketId)}" type="button">Forward</button>`;
+          : isForwarded(t)
+            ? `<span class="muted" title="Emailed to the Trello board">✓ Forwarded</span>`
+            : `<button class="link-btn forward" data-ticket="${esc(t.ticketId)}" type="button">Forward</button>`;
         return `<tr data-ticket="${esc(t.ticketId)}">
           <td class="tid">${esc(t.ticketId)}</td>
           <td class="muted">${esc(formatDate(t.submittedAt))}</td>
@@ -789,7 +794,7 @@
               ${STATUSES.map((s) => `<option${s === t.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
             </select>
           </td>
-          <td class="hide-sm">${forwarded}</td>
+          <td class="hide-sm">${trelloState}</td>
           <td class="row-cell"><button class="link-btn view" data-ticket="${esc(t.ticketId)}" type="button">View</button></td>
         </tr>`;
       }).join('');
@@ -822,14 +827,15 @@
         const result = await adminPost({ action: 'forward', ticketId });
         const ticket = tickets.find((t) => t.ticketId === ticketId);
         if (ticket) {
-          ticket.trelloCardId = result.cardId;
-          ticket.trelloCardUrl = result.url;
+          ticket.integrations = { ...(ticket.integrations || {}), trello: { status: 'sent' } };
         }
         render();
-        actionMsg(result.alreadyForwarded ? `${ticketId} already has a Trello card.` : `${ticketId} forwarded to Trello — ${result.url}`, 'ok');
+        actionMsg(result.alreadyForwarded ? `${ticketId} was already forwarded to Trello.` : `${ticketId} emailed to the Trello board.`, 'ok');
+        return true;
       } catch (error) {
         render();
         actionMsg(error.message, 'error');
+        return false;
       }
     }
 
@@ -887,7 +893,9 @@
         : '';
       const trelloBtn = t.trelloCardUrl
         ? `<a class="btn-ghost" href="${esc(t.trelloCardUrl)}" target="_blank" rel="noopener" style="text-decoration:none">Open Trello card ↗</a>`
-        : `<button class="btn-ghost" id="td-forward" type="button">Forward to Trello</button>`;
+        : isForwarded(t)
+          ? `<span class="btn-ghost" style="opacity:.7;cursor:default">✓ Forwarded to Trello</span>`
+          : `<button class="btn-ghost" id="td-forward" type="button">Forward to Trello</button>`;
       $('td-actions').innerHTML = [
         attachmentBtn,
         `<a class="btn-ghost" href="mailto:${esc(t.email)}?subject=${encodeURIComponent(`[${t.ticketId}] DDISA support`)}" style="text-decoration:none">Email requester ↗</a>`,
@@ -900,9 +908,8 @@
       if (fwd) fwd.addEventListener('click', async () => {
         fwd.disabled = true;
         fwd.textContent = 'Forwarding…';
-        await doForward(t.ticketId, null);
-        const updated = tickets.find((row) => row.ticketId === t.ticketId);
-        if (updated?.trelloCardUrl) openTicket(t.ticketId); // refresh actions
+        const ok = await doForward(t.ticketId, null);
+        if (ok) openTicket(t.ticketId); // refresh actions to "Forwarded"
       });
       $('td-close-btn').addEventListener('click', () => $('ticket-dialog').close());
       $('ticket-dialog').showModal();

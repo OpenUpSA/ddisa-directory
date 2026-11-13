@@ -136,9 +136,10 @@ Tables:
   the validated payload as JSONB, uploaded image paths and review status.
 - `support_requests` — Support Desk tickets from `/support-desk`: contact
   and request fields, attachment metadata, ticket status and the
-  `integrations` JSON (Trello / email / Slack outcomes — Trello and email
-  run through Supabase Edge Functions). Written only by SupportDeskService
-  with the service-role key.
+  `integrations` JSON (Trello-by-email / confirmation email / Slack — both
+  emails through the `support-confirmation` Edge Function; Trello forwarding
+  uses `TRELLO_BOARD_EMAIL`, no API keys). Written only by
+  SupportDeskService with the service-role key.
 - `support_admins` — who may use `/support-admin`: the Supabase Auth
   `user_id` plus email. Grant/revoke with the SQL in `supabase/schema.sql`
   section 13; the admin API checks this table after verifying the session.

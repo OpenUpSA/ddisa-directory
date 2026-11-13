@@ -142,8 +142,8 @@ test('production support requests create Trello, email and Slack records', async
         ? new Response(null, { status: 204 })
         : new Response('', { status: 201 });
     }
-    if (url.includes('/functions/v1/trello-card')) {
-      return jsonResponse({ ok: true, cardId: 'trello-card-1', url: 'https://trello.com/c/qa-card' });
+    if (url.startsWith('https://api.trello.com/')) {
+      throw new Error('Trello must never be called directly from the server');
     }
     if (url.includes('/functions/v1/support-confirmation')) {
       return new Response(JSON.stringify({ ok: true, messageId: 'email-1' }), {
@@ -165,36 +165,34 @@ test('production support requests create Trello, email and Slack records', async
       SUPPORT_DESK_MODE: 'production',
       SUPABASE_URL: 'https://project.supabase.example',
       SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
-      TRELLO_KEY: 'trello-key',
-      TRELLO_TOKEN: 'trello-token',
-      TRELLO_LIST_ID: 'trello-list',
+      TRELLO_BOARD_EMAIL: 'list@boards.trello.com',
       SLACK_SUPPORT_WEBHOOK_URL: 'https://hooks.slack.example/support',
     },
   });
 
   const result = await service.submit(normaliseSupportRequest(validRequest()), null);
   assert.equal(result.preview, false);
-  assert.equal(result.integrations.trello.status, 'created');
+  assert.equal(result.integrations.trello.status, 'sent');
   assert.equal(result.integrations.email.status, 'sent');
   assert.equal(result.integrations.slack.status, 'sent');
 
-  const trello = calls.find((call) => call.url.includes('/functions/v1/trello-card'));
-  assert.ok(trello, 'the Trello card must be created through the trello-card edge function');
-  assert.match(String(trello.headers.Authorization || ''), /^Bearer /);
-  const trelloPayload = JSON.parse(trello.body);
-  assert.equal(trelloPayload.name, 'Support Request - OpenUp');
-  assert.match(trelloPayload.desc, /DDISA-20261106-/);
-
-  const email = calls.find((call) => call.url.includes('/functions/v1/support-confirmation'));
-  assert.ok(email, 'the confirmation email must go through the support-confirmation edge function');
-  assert.match(String(email.headers.Authorization || ''), /^Bearer /);
-  const emailPayload = JSON.parse(email.body);
-  assert.equal(emailPayload.to, 'sihle@example.org');
-  assert.match(emailPayload.subject, /DDISA-20261106-/);
-  assert.match(emailPayload.text, /Dear Sihle/);
+  // Two emails go out through the support-confirmation relay: first the
+  // ticket forwarded to the Trello board (by email), then the requester's
+  // confirmation.
+  const outbound = calls.filter((call) => call.url.includes('/functions/v1/support-confirmation'));
+  assert.equal(outbound.length, 2, 'board forward + confirmation email');
+  assert.match(String(outbound[0].headers.Authorization || ''), /^Bearer /);
+  const boardMail = JSON.parse(outbound[0].body);
+  assert.equal(boardMail.to, 'list@boards.trello.com');
+  assert.equal(boardMail.subject, 'Support Request - OpenUp');
+  assert.match(boardMail.text, /DDISA-20261106-/);
+  const confirmation = JSON.parse(outbound[1].body);
+  assert.equal(confirmation.to, 'sihle@example.org');
+  assert.match(confirmation.subject, /DDISA-20261106-/);
+  assert.match(confirmation.text, /Dear Sihle/);
 
   const slack = calls.find((call) => call.url === 'https://hooks.slack.example/support');
-  assert.match(JSON.parse(slack.body).text, /https:\/\/trello.com\/c\/qa-card/);
+  assert.match(JSON.parse(slack.body).text, /Trello: forwarded to the board by email/);
   assert.equal(
     calls.filter((call) => call.method === 'PATCH' && call.url.includes('/rest/v1/support_requests?')).length,
     1,
@@ -241,9 +239,9 @@ test('production mode runs with Supabase alone — Trello and Slack are optional
 
   const result = await service.submit(normaliseSupportRequest(validRequest()), null);
   assert.equal(result.preview, false);
-  // Trello is always attempted through the edge function now; with no secrets
-  // configured there it fails per-ticket but must never fail the submission.
-  assert.equal(result.integrations.trello.status, 'failed');
+  // No TRELLO_BOARD_EMAIL configured: forwarding reports not configured and
+  // must never fail the submission.
+  assert.equal(result.integrations.trello.status, 'not configured');
   assert.equal(result.integrations.slack.status, 'not configured');
   assert.equal(result.integrations.email.status, 'sent');
   assert.ok(
@@ -412,9 +410,9 @@ test('admin actions: list, status change, Trello forward (idempotent) and attach
     const method = options.method || 'GET';
     if (url.includes('/auth/v1/user')) return jsonResponse({ id: 'user-1', email: 'admin@example.org' });
     if (url.includes('/rest/v1/support_admins')) return jsonResponse([{ user_id: 'user-1', email: 'admin@example.org' }]);
-    if (url.includes('/functions/v1/trello-card')) {
+    if (url.includes('/functions/v1/support-confirmation')) {
       trelloCalls += 1;
-      return jsonResponse({ ok: true, cardId: 'card-9', url: 'https://trello.com/c/card-9' });
+      return jsonResponse({ ok: true, messageId: 'email-2' });
     }
     if (url.includes('/storage/v1/object/sign/')) {
       return jsonResponse({ signedURL: '/object/sign/support-attachments/x?token=tok' });
@@ -436,6 +434,7 @@ test('admin actions: list, status change, Trello forward (idempotent) and attach
       SUPPORT_DESK_MODE: 'production',
       SUPABASE_URL: 'https://project.supabase.example',
       SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
+      TRELLO_BOARD_EMAIL: 'list@boards.trello.com',
     },
   });
 
@@ -458,9 +457,8 @@ test('admin actions: list, status change, Trello forward (idempotent) and attach
 
   const forward = await service.forwardTicketToTrello('DDISA-20261106-ABCDEF');
   assert.equal(forward.alreadyForwarded, false);
-  assert.equal(forward.cardId, 'card-9');
-  assert.equal(trelloCalls, 1);
-  assert.equal(patchBodies.at(-1).trello_card_url, 'https://trello.com/c/card-9');
+  assert.equal(trelloCalls, 1, 'the board email must be sent exactly once');
+  assert.equal(patchBodies.at(-1).integrations.trello.status, 'sent');
 
   const again = await service.forwardTicketToTrello('DDISA-20261106-ABCDEF');
   assert.equal(again.alreadyForwarded, true, 'forwarding twice must not create a second card');

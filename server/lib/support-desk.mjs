@@ -253,7 +253,11 @@ export function buildSlackMessage(record, trelloUrl = '') {
     `Support type: ${record.supportType}`,
     `Goal: ${record.goal}`,
     `Request: ${record.description}`,
-    trelloUrl ? `Trello: ${trelloUrl}` : 'Trello card could not be linked.',
+    trelloUrl
+      ? `Trello: ${trelloUrl}`
+      : record.integrations?.trello?.status === 'sent'
+        ? 'Trello: forwarded to the board by email.'
+        : 'Trello: not forwarded.',
   ].join('\n');
 }
 
@@ -403,7 +407,7 @@ export class SupportDeskService {
       }
     }
 
-    const trello = await this.createTrelloCard(record);
+    const trello = await this.forwardCardToTrello(record);
     record.integrations.trello = trello;
     record.trelloCardId = trello.cardId || '';
     record.trelloCardUrl = trello.url || '';
@@ -548,27 +552,38 @@ export class SupportDeskService {
     }
   }
 
-  async createTrelloCard(record) {
+  /**
+   * Forward the ticket to Trello by EMAIL — no API keys needed. Trello's
+   * "Upload by email" feature turns the subject into the card title and the
+   * body into its description, so buildTrelloCard's {name, desc} maps
+   * straight onto an email through the `support-confirmation` relay (Brevo).
+   * The board address comes from TRELLO_BOARD_EMAIL (Board → … → Upload by
+   * email); without it forwarding reports "not configured".
+   */
+  async forwardCardToTrello(record) {
+    const boardEmail = this.env.TRELLO_BOARD_EMAIL;
+    if (!boardEmail) return { status: 'not configured' };
     const card = buildTrelloCard(record);
     try {
-      // Trello runs through the `trello-card` Supabase Edge Function (script
-      // in supabase/functions/trello-card/index.ts); the TRELLO_* secrets
-      // live in Supabase, not in server/Netlify env.
-      const response = await this.fetch(`${this.supabaseUrl}/functions/v1/trello-card`, {
+      const response = await this.fetch(`${this.supabaseUrl}/functions/v1/support-confirmation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.supabaseKey}`,
           apikey: this.supabaseKey,
         },
-        body: JSON.stringify({ name: card.name, desc: card.desc }),
+        body: JSON.stringify({
+          to: boardEmail,
+          subject: card.name,
+          text: card.desc,
+        }),
         signal: AbortSignal.timeout(20_000),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(body.error || `Trello edge function returned ${response.status}.`);
+        throw new Error(body.error || `Email function returned ${response.status}.`);
       }
-      return { status: 'created', cardId: body.cardId || '', url: body.url || '' };
+      return { status: 'sent', messageId: body.messageId || '' };
     } catch (error) {
       return { status: 'failed', error: error.message };
     }
@@ -633,11 +648,11 @@ export class SupportDeskService {
     return {
       mode: this.mode,
       supabase: Boolean(this.supabaseUrl && this.supabaseKey),
-      // Trello and email both run through Supabase Edge Functions
-      // (trello-card / support-confirmation); this only reports that the
-      // backend can invoke them — the per-ticket integrations JSON is the
-      // ground truth for what actually happened.
-      trello: Boolean(this.supabaseUrl && this.supabaseKey),
+      // Confirmations and Trello board forwards both run through the
+      // `support-confirmation` Edge Function (Brevo). This reports whether
+      // the board address is configured; the per-ticket integrations JSON is
+      // the ground truth for what actually happened.
+      trello: Boolean(this.env.TRELLO_BOARD_EMAIL),
       email: Boolean(this.supabaseUrl && this.supabaseKey),
       slack: Boolean(this.env.SLACK_SUPPORT_WEBHOOK_URL),
     };
@@ -706,23 +721,19 @@ export class SupportDeskService {
   }
 
   /**
-   * Forward a ticket to the Trello board through the trello-card Edge
-   * Function. Idempotent: a ticket that already has a card just returns the
-   * stored link.
+   * Forward a ticket to the Trello board by email through the
+   * support-confirmation Edge Function. Idempotent: the outcome is stored in
+   * the ticket's integrations JSON (email forwards have no card URL).
    */
   async forwardTicketToTrello(ticketId) {
     const ticket = await this.getTicket(ticketId);
-    if (ticket.trelloCardUrl) {
-      return {
-        ticketId,
-        cardId: ticket.trelloCardId,
-        url: ticket.trelloCardUrl,
-        alreadyForwarded: true,
-      };
+    const previous = ticket.integrations?.trello;
+    if (ticket.trelloCardUrl || (previous && ['sent', 'created'].includes(previous.status))) {
+      return { ticketId, alreadyForwarded: true, url: ticket.trelloCardUrl || '' };
     }
-    const outcome = await this.createTrelloCard(ticket);
-    if (outcome.status !== 'created') {
-      const error = new Error(outcome.error || 'The Trello card could not be created.');
+    const outcome = await this.forwardCardToTrello(ticket);
+    if (outcome.status !== 'sent') {
+      const error = new Error(outcome.error || 'The ticket could not be forwarded to Trello.');
       error.expose = true;
       throw error;
     }
@@ -730,10 +741,12 @@ export class SupportDeskService {
       `/rest/v1/${this.supabaseTable}?ticket_id=eq.${encodeURIComponent(ticketId)}`,
       {
         method: 'PATCH',
-        body: JSON.stringify({ trello_card_id: outcome.cardId, trello_card_url: outcome.url }),
+        body: JSON.stringify({
+          integrations: { ...(ticket.integrations || {}), trello: outcome },
+        }),
       },
     );
-    return { ticketId, cardId: outcome.cardId, url: outcome.url, alreadyForwarded: false };
+    return { ticketId, alreadyForwarded: false, url: '' };
   }
 
   /** Short-lived signed URL for a ticket attachment (private bucket). */
