@@ -143,9 +143,13 @@ Tables:
 - `support_admins` — who may use `/support-admin`: the Supabase Auth
   `user_id` plus email. Grant/revoke with the SQL in `supabase/schema.sql`
   section 13; the admin API checks this table after verifying the session.
-- `organisations.owner_id` — the Supabase Auth user allowed to edit the
-  profile (null = nobody). Delete the user or clear the column to revoke
-  access.
+- `organisations.owner_id` / `owner_email` — the Supabase Auth user (and
+  their login email) allowed to edit that profile; set from the
+  `/support-admin` console (`link-owner` / `unlink-owner` actions) or SQL.
+  Support admins (`support_admins`) can edit **every** organisation
+  regardless — the client sends the target `organisationId` and
+  `editorFromRequest` resolves it admin-side. Delete the auth user or clear
+  the columns to revoke access.
 
 Use Supabase Storage buckets for organisation logos and organisation photos.
 Keep bucket and database write operations behind a server function using a
@@ -194,10 +198,12 @@ The local Node server exposes:
   Netlify rewritten to the `support-requests` function.
 - `GET /api/support/health` — Support Desk mode and configured
   integrations.
-- `GET|POST /api/support-admin` — admin console API: list tickets
-  (`GET`, or `?ticket=<id>` for a signed attachment URL), status changes and
-  Trello forwarding (`POST {action:'status'|'forward', …}`). Requires a
-  Supabase Auth session whose user is in `support_admins` (401/403
+- `GET|POST /api/support-admin` — admin console API: list tickets and
+  organisations with login emails (`GET`, or `?ticket=<id>` for a signed
+  attachment URL), status changes and Trello forwarding
+  (`POST {action:'status'|'forward', …}`) and organisation login linking
+  (`POST {action:'link-owner'|'unlink-owner', organisationSlug, email}`).
+  Requires a Supabase Auth session whose user is in `support_admins` (401/403
   otherwise); rewritten to the `support-admin` function on Netlify.
 
 Static serving is restricted to the three supplied HTML files,

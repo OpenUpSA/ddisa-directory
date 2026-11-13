@@ -354,6 +354,12 @@
     .dd a { color: var(--green); font-weight: 700; }
     .dd code { font-size: 11px; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
 
+    .section-head { margin: 38px 0 14px; }
+    .section-head h2 { margin: 0; font-size: 21px; letter-spacing: -.4px; }
+    .section-head p { margin: 6px 0 0; color: var(--muted); font-size: 12px; max-width: 780px; line-height: 1.6; }
+    .link-btn + .link-btn { margin-left: 8px; }
+    .hint { margin: 8px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.55; }
+
     :focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
 
     @media (max-width: 760px) {
@@ -428,6 +434,26 @@
         <div class="empty" id="empty" hidden>No support tickets match this filter.</div>
       </div>
     </section>
+
+    <section id="orgs-panel" hidden>
+      <div class="section-head">
+        <h2>Organisation logins</h2>
+        <p>Link a login email to an organisation so that person can edit its profile anywhere in the directory (the passwordless sign-in). If no Supabase account exists for the address, one is created automatically. Support admins can edit every organisation either way.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Organisation</th>
+              <th>Login email</th>
+              <th aria-label="Actions"></th>
+            </tr>
+          </thead>
+          <tbody id="org-rows"></tbody>
+        </table>
+        <div class="empty" id="orgs-empty" hidden>No organisations found.</div>
+      </div>
+    </section>
   </main>
 
   <dialog id="signin-form" aria-labelledby="signin-title">
@@ -460,6 +486,25 @@
     </div>
   </dialog>
 
+  <dialog id="owner-dialog" aria-labelledby="owner-title">
+    <div class="dlg-top">
+      <h2 id="owner-title">Set login email</h2>
+      <button id="owner-close" class="dlg-close" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="dlg-body">
+      <p class="note" id="owner-org">Organisation</p>
+      <label class="field" for="owner-email">Login email
+        <input id="owner-email" type="email" maxlength="254" required placeholder="editor@organisation.org">
+      </label>
+      <p class="hint">That person signs in with the directory's passwordless flow. If no Supabase account exists for this address, one is created automatically (auto-confirmed).</p>
+      <p class="msg" id="owner-msg" role="alert" aria-live="polite"></p>
+      <div class="dlg-actions">
+        <button class="btn-primary" id="owner-save" type="button">Save login email</button>
+        <button class="btn-ghost" id="owner-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
   <footer>
     <span><b>DDISA</b> · Digital Democracy Initiative Sub-Saharan Africa</span>
     <span>Support Desk · Administration console</span>
@@ -478,6 +523,8 @@
     let tickets = [];
     let otpSentTo = '';
     let currentAdmin = '';
+    let organisations = [];
+    let ownerSlug = '';
 
     // -------------------------------------------------------------- auth ----
     // Same passwordless Supabase flow and the SAME session key as the
@@ -736,6 +783,7 @@
       $('gate').hidden = false;
       $('denied').hidden = true;
       $('list-panel').hidden = true;
+      $('orgs-panel').hidden = true;
       $('signout').hidden = true;
       $('counts').textContent = '';
       $('who').textContent = '';
@@ -746,18 +794,22 @@
       try {
         const result = await adminFetch('/api/support-admin');
         tickets = Array.isArray(result.tickets) ? result.tickets : [];
+        organisations = Array.isArray(result.organisations) ? result.organisations : [];
         currentAdmin = result.admin?.email || '';
         $('gate').hidden = true;
         $('denied').hidden = true;
         $('list-panel').hidden = false;
+        $('orgs-panel').hidden = false;
         $('signout').hidden = false;
         $('who').textContent = currentAdmin ? `Signed in as ${currentAdmin}` : '';
         render();
+        renderOrgs();
       } catch (error) {
         if (error.status === 403) {
           $('gate').hidden = true;
           $('denied').hidden = false;
           $('list-panel').hidden = true;
+          $('orgs-panel').hidden = true;
           $('signout').hidden = false;
           $('denied-copy').textContent = error.message;
           $('counts').textContent = '';
@@ -838,6 +890,78 @@
         return false;
       }
     }
+
+    // ------------------------------------------ organisation login emails --
+    function renderOrgs() {
+      $('orgs-empty').hidden = organisations.length > 0;
+      $('org-rows').innerHTML = organisations.map((o) => `<tr data-slug="${esc(o.slug)}">
+        <td><span class="strong">${esc(o.name)}</span><span class="cell-sub">/${esc(o.slug)}</span></td>
+        <td>${o.ownerEmail ? esc(o.ownerEmail) : '<span class="muted">Not linked</span>'}</td>
+        <td class="row-cell">
+          <button class="link-btn set-owner" data-slug="${esc(o.slug)}" type="button">Set login</button>${o.ownerEmail ? ` <button class="link-btn unlink-owner" data-slug="${esc(o.slug)}" type="button">Unlink</button>` : ''}
+        </td>
+      </tr>`).join('');
+    }
+
+    function ownerMsg(message, kind) {
+      const el = $('owner-msg');
+      el.textContent = message || '';
+      el.className = 'msg' + (message ? ' show ' + (kind || 'error') : '');
+    }
+    function openOwnerDialog(slug) {
+      const org = organisations.find((o) => o.slug === slug);
+      if (!org) return;
+      ownerSlug = slug;
+      $('owner-org').textContent = `${org.name} — /${org.slug}`;
+      $('owner-email').value = org.ownerEmail || '';
+      ownerMsg('');
+      $('owner-dialog').showModal();
+      $('owner-email').focus();
+    }
+    async function doUnlink(slug) {
+      const org = organisations.find((o) => o.slug === slug);
+      try {
+        await adminPost({ action: 'unlink-owner', organisationSlug: slug });
+        if (org) org.ownerEmail = '';
+        renderOrgs();
+        actionMsg(`${org?.name || slug}: login email unlinked.`, 'ok');
+      } catch (error) {
+        actionMsg(error.message, 'error');
+      }
+    }
+
+    $('org-rows').addEventListener('click', (event) => {
+      const setBtn = event.target.closest('.set-owner');
+      if (setBtn) { openOwnerDialog(setBtn.dataset.slug); return; }
+      const unlinkBtn = event.target.closest('.unlink-owner');
+      if (unlinkBtn) doUnlink(unlinkBtn.dataset.slug);
+    });
+    $('owner-close').addEventListener('click', () => $('owner-dialog').close());
+    $('owner-cancel').addEventListener('click', () => $('owner-dialog').close());
+    $('owner-save').addEventListener('click', async () => {
+      const email = $('owner-email').value.trim();
+      if (!email) { ownerMsg('Enter the login email.'); return; }
+      const button = $('owner-save');
+      button.disabled = true;
+      ownerMsg('Saving…', 'ok');
+      try {
+        const result = await adminPost({ action: 'link-owner', organisationSlug: ownerSlug, email });
+        const org = organisations.find((o) => o.slug === ownerSlug);
+        if (org) org.ownerEmail = result.email;
+        renderOrgs();
+        $('owner-dialog').close();
+        actionMsg(
+          result.userCreated
+            ? `${result.organisationName}: created ${result.email} and linked it as the login.`
+            : `${result.organisationName}: login set to ${result.email}.`,
+          'ok',
+        );
+      } catch (error) {
+        ownerMsg(error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    });
 
     $('rows').addEventListener('click', (event) => {
       const forward = event.target.closest('.forward');

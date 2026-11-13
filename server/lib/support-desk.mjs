@@ -769,4 +769,93 @@ export class SupportDeskService {
       expiresIn: 3600,
     };
   }
+
+  // ------------------------------------------- organisation login emails --
+
+  /**
+   * Find the Supabase Auth user for a login email, creating it if missing
+   * (passwordless — GoTrue admin API with the service-role key; the account
+   * is auto-confirmed because the OTP email itself proves mailbox control).
+   */
+  async findOrCreateAuthUser(rawEmail) {
+    const email = cleanEmail(rawEmail, true);
+    const found = await this.supabaseRequest(
+      `/auth/v1/admin/users?filter=${encodeURIComponent(email)}&per_page=10`,
+    );
+    const users = Array.isArray(found) ? found : found?.users || [];
+    const existing = users.find(
+      (row) => String(row.email || '').toLowerCase() === email.toLowerCase(),
+    );
+    if (existing) return { id: existing.id, email, created: false };
+
+    const created = await this.supabaseRequest('/auth/v1/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ email, email_confirm: true }),
+    });
+    if (!created?.id) {
+      const error = httpError(502, 'The login account could not be created in Supabase Auth.');
+      error.expose = true;
+      throw error;
+    }
+    return { id: created.id, email, created: true };
+  }
+
+  /**
+   * Link (or replace) an organisation's login email: ensures the Supabase
+   * Auth user exists and points organisations.owner_id / owner_email at it.
+   * That person then edits the profile with the directory's passwordless
+   * sign-in; support admins can edit every organisation regardless.
+   */
+  async linkOrganisationOwner(organisationSlug, rawEmail) {
+    const slug = String(organisationSlug || '').trim();
+    const email = cleanEmail(rawEmail, true);
+    const rows = await this.supabaseRequest(
+      `/rest/v1/organisations?slug=eq.${encodeURIComponent(slug)}&select=slug,name`,
+    );
+    if (!rows?.length) throw httpError(404, 'That organisation could not be found.');
+
+    const user = await this.findOrCreateAuthUser(email);
+    const updated = await this.supabaseRequest(
+      `/rest/v1/organisations?slug=eq.${encodeURIComponent(slug)}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ owner_id: user.id, owner_email: email }),
+      },
+    );
+    if (!updated?.length) throw httpError(404, 'That organisation could not be found.');
+    return {
+      organisationSlug: slug,
+      organisationName: rows[0].name,
+      email,
+      userId: user.id,
+      userCreated: user.created,
+    };
+  }
+
+  async unlinkOrganisationOwner(organisationSlug) {
+    const slug = String(organisationSlug || '').trim();
+    const updated = await this.supabaseRequest(
+      `/rest/v1/organisations?slug=eq.${encodeURIComponent(slug)}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ owner_id: null, owner_email: null }),
+      },
+    );
+    if (!updated?.length) throw httpError(404, 'That organisation could not be found.');
+    return { organisationSlug: slug, unlinked: true };
+  }
+
+  /** Organisations with their login email, for the admin console. */
+  async listOrganisationsForAdmin() {
+    const rows = await this.supabaseRequest(
+      '/rest/v1/organisations?select=slug,name,owner_email&order=name.asc',
+    );
+    return (rows || []).map((row) => ({
+      slug: row.slug,
+      name: row.name,
+      ownerEmail: row.owner_email || '',
+    }));
+  }
 }

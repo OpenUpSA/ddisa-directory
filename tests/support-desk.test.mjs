@@ -471,3 +471,72 @@ test('admin actions: list, status change, Trello forward (idempotent) and attach
   );
   assert.equal(signed.expiresIn, 3600);
 });
+
+test('link-owner creates or reuses the auth user and points the organisation at it', async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'ddisa-support-owner-test-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  const users = [];
+  let patched = null;
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    const method = options.method || 'GET';
+    if (url.includes('/auth/v1/admin/users')) {
+      if (method === 'POST') {
+        const created = { id: `new-user-${users.length + 1}`, email: JSON.parse(options.body).email };
+        users.push(created);
+        return jsonResponse(created, 201);
+      }
+      return jsonResponse({ users });
+    }
+    if (method === 'PATCH' && url.includes('/rest/v1/organisations')) {
+      patched = JSON.parse(options.body);
+      return jsonResponse([{ slug: 'digital-woman-uganda', name: 'Digital Woman Uganda' }]);
+    }
+    if (url.includes('order=name.asc')) {
+      return jsonResponse([
+        { slug: 'digital-woman-uganda', name: 'Digital Woman Uganda', owner_email: users[0]?.email || '' },
+      ]);
+    }
+    if (url.includes('slug=eq.digital-woman-uganda')) {
+      return jsonResponse([{ slug: 'digital-woman-uganda', name: 'Digital Woman Uganda' }]);
+    }
+    return jsonResponse([]);
+  };
+  const service = new SupportDeskService({
+    root: directory,
+    fetchImpl,
+    env: {
+      SUPPORT_DESK_MODE: 'production',
+      SUPABASE_URL: 'https://project.supabase.example',
+      SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
+    },
+  });
+
+  const first = await service.linkOrganisationOwner('digital-woman-uganda', 'grantee@example.org');
+  assert.equal(first.userCreated, true);
+  assert.equal(first.userId, 'new-user-1');
+  assert.equal(first.email, 'grantee@example.org');
+  assert.deepEqual(patched, { owner_id: 'new-user-1', owner_email: 'grantee@example.org' });
+
+  const second = await service.linkOrganisationOwner('digital-woman-uganda', 'grantee@example.org');
+  assert.equal(second.userCreated, false, 'existing users are reused, never duplicated');
+
+  const unlinked = await service.unlinkOrganisationOwner('digital-woman-uganda');
+  assert.equal(unlinked.unlinked, true);
+  assert.deepEqual(patched, { owner_id: null, owner_email: null });
+
+  const orgs = await service.listOrganisationsForAdmin();
+  assert.deepEqual(orgs, [
+    { slug: 'digital-woman-uganda', name: 'Digital Woman Uganda', ownerEmail: 'grantee@example.org' },
+  ]);
+
+  await assert.rejects(
+    () => service.linkOrganisationOwner('no-such-org', 'x@example.org'),
+    (error) => error.status === 404,
+  );
+  await assert.rejects(
+    () => service.linkOrganisationOwner('digital-woman-uganda', 'not-an-email'),
+    (error) => /email/i.test(error.message),
+  );
+});

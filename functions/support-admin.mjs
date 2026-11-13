@@ -39,6 +39,7 @@ export async function handler(event) {
       return jsonResponse(200, {
         admin: { email: admin.email },
         tickets: await service.listTickets(),
+        organisations: await service.listOrganisationsForAdmin(),
       });
     }
 
@@ -58,8 +59,14 @@ export async function handler(event) {
       result = await service.setTicketStatus(body.ticketId, body.status);
     } else if (body.action === 'forward') {
       result = await service.forwardTicketToTrello(body.ticketId);
+    } else if (body.action === 'link-owner') {
+      result = await service.linkOrganisationOwner(body.organisationSlug, body.email);
+    } else if (body.action === 'unlink-owner') {
+      result = await service.unlinkOrganisationOwner(body.organisationSlug);
     } else {
-      return jsonResponse(400, { error: 'Action must be "status" or "forward".' });
+      return jsonResponse(400, {
+        error: 'Action must be "status", "forward", "link-owner" or "unlink-owner".',
+      });
     }
     return jsonResponse(200, { ok: true, ...result });
   } catch (error) {

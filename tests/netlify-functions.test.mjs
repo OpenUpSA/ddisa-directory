@@ -139,6 +139,26 @@ test('access 403s for a signed-in user with no linked organisation', async (cont
   assert.match(JSON.parse(response.body).error, /not linked to an organisation/);
 });
 
+test('access flags support admins so they can edit any organisation', async (context) => {
+  installFetch(context, (call) => {
+    if (call.pathname === '/auth/v1/user') return authUser(call);
+    if (call.pathname === '/rest/v1/support_admins') return json([{ user_id: 'user-1' }]);
+    if (call.search.includes('owner_id=eq.')) return json([]);
+    return json([]);
+  });
+
+  const adminResponse = await accessHandler({
+    httpMethod: 'GET',
+    headers: { authorization: 'Bearer good-jwt' },
+  });
+
+  assert.equal(adminResponse.statusCode, 200);
+  const body = JSON.parse(adminResponse.body);
+  assert.equal(body.isAdmin, true);
+  assert.equal(body.organisationId, null, 'admin with no linked org gets a null organisation');
+  assert.equal(body.email, 'editor@digitalwoman.example');
+});
+
 test('access reports 503 when Supabase Auth is unreachable', async (context) => {
   installFetch(context, () => {
     throw new Error('connection refused');
@@ -224,6 +244,54 @@ test('profile updates publish directly with images and child rows', async (conte
   assert.equal(audit.json.review_status, 'Approved');
   assert.equal(audit.json.organisation_slug, 'digital-woman-uganda');
   assert.match(audit.json.internal_notes, /Published automatically/);
+});
+
+test('support admins can publish updates to any organisation', async (context) => {
+  const calls = installFetch(context, ({ method, pathname, search }) => {
+    if (pathname === '/auth/v1/user') return authUser({ headers: { authorization: 'Bearer good-jwt' } });
+    if (pathname === '/rest/v1/support_admins') return json([{ user_id: 'user-1' }]);
+    if (search.includes('owner_id=eq.')) return json([]); // no linked org for this admin
+    if (search.includes('select=slug,name,publication_status')) {
+      // editorFromRequest resolving the client-named target organisation
+      return json([LINKED_ORGANISATION]);
+    }
+    if (pathname === '/rest/v1/organisations' && method === 'GET') {
+      return json([
+        { id: 'org-uuid-1', slug: 'digital-woman-uganda', name: 'Digital Woman Uganda', photo_path: '', logo_path: '' },
+      ]);
+    }
+    if (pathname.startsWith('/storage/v1/object/')) return new Response('{}', { status: 200 });
+    if (pathname === '/rest/v1/organisations' && method === 'PATCH') return json([{ slug: 'digital-woman-uganda' }]);
+    return json([]);
+  });
+
+  const response = await submissionsHandler(
+    postEvent(
+      {
+        // The admin names the target — owners never send this for their own
+        // org (the server resolves it from owner_id instead).
+        organisationId: 'digital-woman-uganda',
+        contactEmail: 'hello@digitalwoman.example',
+        summary: 'Admin-edited summary.',
+        description: 'Admin-edited description.',
+        type: ['Women-focused'],
+      },
+      '10.1.7.1',
+      'Bearer good-jwt',
+    ),
+  );
+
+  assert.equal(response.statusCode, 201);
+  const body = JSON.parse(response.body);
+  assert.equal(body.submissionId, 'digital-woman-uganda');
+
+  const patch = calls.find((call) => call.method === 'PATCH');
+  assert.ok(patch, 'organisation row must be updated');
+  assert.equal(patch.json.summary, 'Admin-edited summary.');
+
+  const audit = calls.find((call) => call.pathname === '/rest/v1/submissions' && call.method === 'POST');
+  assert.equal(audit.json.request_type, 'Profile update');
+  assert.equal(audit.json.organisation_slug, 'digital-woman-uganda');
 });
 
 test('profile updates from a user with no linked organisation return 403', async (context) => {

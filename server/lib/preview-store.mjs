@@ -49,6 +49,11 @@ export class PreviewStore {
     return null;
   }
 
+  /** No support_admins table is reachable in preview mode. */
+  async isSupportAdmin() {
+    return false;
+  }
+
   async createSubmission(payload, photo, logo) {
     await mkdir(this.photoDir, { recursive: true });
     const id = randomUUID();

@@ -32,7 +32,8 @@ export async function handler(event) {
 
     const body = parseJsonBody(event);
     // A Bearer header means "editing my organisation"; no header means a
-    // public, anonymous new-organisation submission.
+    // public, anonymous new-organisation submission. Admins send
+    // organisationId so the resolver knows which profile to publish.
     let access = null;
     try {
       const { baseUrl, apiKey } = getAuthConfig();
@@ -41,6 +42,8 @@ export async function handler(event) {
         baseUrl,
         apiKey,
         store: getStore(),
+        requestedSlug: body.organisationId || '',
+        requireOrganisation: true,
       });
       access = editor ? editor.access : null;
     } catch (error) {

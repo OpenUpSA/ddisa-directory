@@ -212,6 +212,19 @@ export class SupabaseStore {
     return rows[0] || null;
   }
 
+  /** Is this Supabase Auth user a support-desk administrator? */
+  async isSupportAdmin(userId) {
+    if (!userId) return false;
+    const rows = await this.rest('support_admins', {
+      query: {
+        select: 'user_id',
+        user_id: `eq.${userId}`,
+        limit: 1,
+      },
+    });
+    return rows.length > 0;
+  }
+
   /**
    * The organisation a Supabase Auth user may edit, matched through
    * organisations.owner_id. Returns null when the user owns nothing yet.

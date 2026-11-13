@@ -56,6 +56,9 @@ create table if not exists public.organisations (
   -- Null = nobody signed in can edit it yet; set it from the SQL editor with
   --   update organisations set owner_id = '<auth-user-uuid>' where slug = '…';
   owner_id           uuid references auth.users (id) on delete set null,
+  -- Login email of owner_id, denormalised for the admin console display
+  -- (set together with owner_id by the /support-admin link-owner action).
+  owner_email        text,
   last_reviewed     timestamptz,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
@@ -72,6 +75,8 @@ alter table public.organisations
 -- until this ALTER adds it. (A fresh create table already includes both.)
 alter table public.organisations
   add column if not exists owner_id uuid references auth.users (id) on delete set null;
+alter table public.organisations
+  add column if not exists owner_email text;
 alter table public.organisations
   drop column if exists token_version;
 

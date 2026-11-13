@@ -52,13 +52,31 @@ function fail(status, message) {
  *
  * Returns `null` when the request carries no Authorization header — the
  * caller treats that as a public, anonymous submission. Otherwise returns
- * `{ user, organisation, access }` where `access` is the shape
- * `normaliseSubmission` expects (`{ sub: slug, name }`), or throws:
+ * Resolve the signed-in editor for a request.
+ *
+ * - No Authorization header → null (anonymous submission).
+ * - Owner path: `organisations.owner_id` matches the user → that org only.
+ * - Admin path: a member of `support_admins` may edit ANY organisation;
+ *   `requestedSlug` (from the client) selects which one. Admins without a
+ *   linked organisation get `{ organisation: null, isAdmin: true }` for the
+ *   UI-only access check (when `requireOrganisation` is false).
+ *
+ * Returns `{ user, organisation, access, isAdmin }` where `access` is the
+ * shape `normaliseSubmission` expects (`{ sub: slug, name }`), or throws:
  *   501 — no Supabase backend configured
  *   401 — invalid/expired session
- *   403 — signed in, but no organisation linked to this user
+ *   404 — admin requested an organisation that does not exist
+ *   400 — admin edit without a requested organisation
+ *   403 — signed in, but not allowed to edit that organisation
  */
-export async function editorFromRequest({ authorization, baseUrl, apiKey, store }) {
+export async function editorFromRequest({
+  authorization,
+  baseUrl,
+  apiKey,
+  store,
+  requestedSlug = '',
+  requireOrganisation = false,
+}) {
   const accessToken = bearerToken(authorization);
   if (!accessToken) return null;
   if (!baseUrl) {
@@ -68,13 +86,42 @@ export async function editorFromRequest({ authorization, baseUrl, apiKey, store 
   if (!user) {
     fail(401, 'Your session has expired. Please sign in again.');
   }
-  const organisation = await store.findOrganisationByOwner(user.id);
-  if (!organisation) {
-    fail(403, 'Your account is not linked to an organisation yet. Ask DDISA to connect your account.');
+
+  const ownerOrganisation = await store.findOrganisationByOwner(user.id);
+  const wantsOther = Boolean(requestedSlug) && ownerOrganisation?.slug !== requestedSlug;
+  if (ownerOrganisation && !wantsOther) {
+    return {
+      user,
+      organisation: ownerOrganisation,
+      access: { sub: ownerOrganisation.slug, name: ownerOrganisation.name },
+      isAdmin: false,
+    };
   }
-  return {
-    user,
-    organisation,
-    access: { sub: organisation.slug, name: organisation.name },
-  };
+
+  const isAdmin = await store.isSupportAdmin(user.id);
+  if (isAdmin) {
+    if (!requestedSlug) {
+      if (requireOrganisation) {
+        fail(400, 'Choose an organisation to edit (organisationId is required).');
+      }
+      // UI-only access check for an admin with no linked organisation.
+      return { user, organisation: null, access: null, isAdmin: true };
+    }
+    const organisation = await store.findOrganisation(requestedSlug);
+    if (!organisation) {
+      fail(404, 'The organisation could not be found.');
+    }
+    return {
+      user,
+      organisation,
+      access: { sub: organisation.slug, name: organisation.name },
+      isAdmin: true,
+    };
+  }
+
+  if (ownerOrganisation) {
+    // Signed-in owner asking for a different organisation — deny.
+    fail(403, 'Your account can only edit its linked organisation.');
+  }
+  fail(403, 'Your account is not linked to an organisation yet. Ask DDISA to connect your account.');
 }

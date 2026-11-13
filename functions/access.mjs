@@ -28,9 +28,10 @@ export async function handler(event) {
       return jsonResponse(401, { error: 'Sign in to edit your organisation.' });
     }
     return jsonResponse(200, {
-      organisationId: editor.organisation.slug,
-      organisationName: editor.organisation.name,
+      organisationId: editor.organisation?.slug || null,
+      organisationName: editor.organisation?.name || null,
       email: editor.user.email,
+      isAdmin: editor.isAdmin === true,
     });
   } catch (error) {
     return errorResponse(error);

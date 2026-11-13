@@ -375,7 +375,7 @@ function supportDeskHref(){
  if(!editAccess)return base;
  const record=data.find(row=>slugFor(row)===editAccess.organisationId);
  const params=new URLSearchParams();
- params.set('organisation',editAccess.organisationName||'');
+ if(editAccess.organisationName)params.set('organisation',editAccess.organisationName);
  const email=editAccess.email||(readAuthSession()||{}).email;
  if(email)params.set('email',email);
  if(record&&record.country)params.set('country',record.country);
@@ -388,6 +388,11 @@ function supportDeskHref(){
 function openMyOrganisationEditor(){
  if(!editAccess){
   setAlert('app-alert',readAuthSession()?'Your account is not linked to an organisation yet. Ask DDISA to connect it.':'Sign in with your grantee account to edit your organisation.','error');
+  return;
+ }
+ if(!editAccess.organisationId){
+  // Support admin without a linked organisation of their own.
+  setAlert('app-alert','Open any organisation profile and choose “Edit your organisation”.','info');
   return;
  }
  const index=data.findIndex(record=>record.id===editAccess.organisationId);
@@ -1015,7 +1020,7 @@ function collectResources(targetId){
 }
 function openProfileEditor(){
  const d=data[activeProfileIndex];if(!d)return;
- if(!editAccess||editAccess.organisationId!==d.id){
+ if(!editAccess||(!editAccess.isAdmin&&editAccess.organisationId!==d.id)){
   setAlert('profile-alert','Sign in with your grantee account to update this profile.','error');
   return;
  }
@@ -1069,6 +1074,7 @@ async function submitProfileUpdate(event){
  try{
   const offerings=collectOfferings('editor-offerings');
   await postSubmission({
+   organisationId:slugFor(d),
    type:collectCsoTypes('editor-types'),
    contactEmail:$('editor-contact-email').value.trim(),
    contacts:collectContacts('editor-contacts'),
@@ -1158,7 +1164,7 @@ function openProfile(i,updateHistory=true){
  $('profile-content').innerHTML=profileMarkup(d,false);
  if(!$('profile').open)$('profile').showModal();
  const copy=$('copy-profile');if(copy)copy.onclick=()=>copyLink(copy,'Copy profile link');
- const edit=$('edit-profile');edit.hidden=!editAccess||editAccess.organisationId!==d.id;
+ const edit=$('edit-profile');edit.hidden=!editAccess||(!editAccess.isAdmin&&editAccess.organisationId!==d.id);
  if(!edit.hidden)edit.textContent='Edit your organisation';
  const fullPage=$('full-profile-page');if(fullPage)fullPage.hidden=demoOrModalProfile();
  if(updateHistory)updateUrl(d.name);
@@ -1187,7 +1193,7 @@ function updateOrgPageBar(){
  if(!orgPageSlug)return;
  const d=data.find(record=>slugFor(record)===orgPageSlug);
  const edit=$('org-page-edit');
- if(edit)edit.hidden=!d||!editAccess||editAccess.organisationId!==slugFor(d);
+ if(edit)edit.hidden=!d||!editAccess||(!editAccess.isAdmin&&editAccess.organisationId!==slugFor(d));
 }
 function refreshProfileView(){
  if(orgPageSlug){renderOrgPage();return}

@@ -166,6 +166,14 @@ support queue:
   **mailto:** pre-filled with the ticket number.
 - Sign-in uses the same passwordless Supabase Auth flow and the **same
   browser session** as the directory (`ddisa.auth`).
+- **Organisation logins**: link any Supabase login email to an organisation
+  from the *Organisation logins* table (the account is created automatically
+  if it doesn't exist) so that person edits the profile with the directory's
+  passwordless sign-in.
+- **Support admins can edit every organisation**: the Edit button appears on
+  every profile, quick-view modal and `/org/<slug>` page — the submission
+  carries the target `organisationId` and the server resolves it through
+  `support_admins`.
 - Authorization = membership of `public.support_admins`. Grant access with
   (run after creating the user in Authentication → Users):
 

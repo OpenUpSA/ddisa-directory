@@ -208,9 +208,10 @@ const server = createServer(async (request, response) => {
           return;
         }
         sendJson(response, 200, {
-          organisationId: editor.organisation.slug,
-          organisationName: editor.organisation.name,
+          organisationId: editor.organisation?.slug || null,
+          organisationName: editor.organisation?.name || null,
           email: editor.user.email,
+          isAdmin: editor.isAdmin === true,
         });
       } catch (error) {
         sendJson(response, error.status || 500, { error: error.message });
@@ -226,7 +227,8 @@ const server = createServer(async (request, response) => {
 
       const body = await readJsonBody(request);
       // A Bearer header means "editing my organisation"; no header means a
-      // public, anonymous new-organisation submission.
+      // public, anonymous new-organisation submission. Admins send
+      // organisationId so the resolver knows which profile to publish.
       let access = null;
       try {
         const editor = await editorFromRequest({
@@ -234,6 +236,8 @@ const server = createServer(async (request, response) => {
           baseUrl: mode === 'supabase' ? process.env.SUPABASE_URL : '',
           apiKey: supabaseApiKey,
           store,
+          requestedSlug: body.organisationId || '',
+          requireOrganisation: true,
         });
         access = editor ? editor.access : null;
       } catch (error) {
@@ -353,6 +357,7 @@ const server = createServer(async (request, response) => {
         sendJson(response, 200, {
           admin: { email: admin.email },
           tickets: await supportDesk.listTickets(),
+          organisations: await supportDesk.listOrganisationsForAdmin(),
         });
         return;
       }
@@ -369,8 +374,14 @@ const server = createServer(async (request, response) => {
         result = await supportDesk.setTicketStatus(body.ticketId, body.status);
       } else if (body.action === 'forward') {
         result = await supportDesk.forwardTicketToTrello(body.ticketId);
+      } else if (body.action === 'link-owner') {
+        result = await supportDesk.linkOrganisationOwner(body.organisationSlug, body.email);
+      } else if (body.action === 'unlink-owner') {
+        result = await supportDesk.unlinkOrganisationOwner(body.organisationSlug);
       } else {
-        sendJson(response, 400, { error: 'Action must be "status" or "forward".' });
+        sendJson(response, 400, {
+          error: 'Action must be "status", "forward", "link-owner" or "unlink-owner".',
+        });
         return;
       }
       sendJson(response, 200, { ok: true, ...result });
