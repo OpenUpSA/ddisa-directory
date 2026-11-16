@@ -63,9 +63,11 @@ export async function handler(event) {
       result = await service.linkOrganisationOwner(body.organisationSlug, body.email);
     } else if (body.action === 'unlink-owner') {
       result = await service.unlinkOrganisationOwner(body.organisationSlug);
+    } else if (body.action === 'create-org') {
+      result = await service.createOrganisation(body);
     } else {
       return jsonResponse(400, {
-        error: 'Action must be "status", "forward", "link-owner" or "unlink-owner".',
+        error: 'Action must be "status", "forward", "link-owner", "unlink-owner" or "create-org".',
       });
     }
     return jsonResponse(200, { ok: true, ...result });

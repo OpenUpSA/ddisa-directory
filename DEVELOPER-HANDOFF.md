@@ -201,10 +201,15 @@ The local Node server exposes:
 - `GET|POST /api/support-admin` — admin console API: list tickets and
   organisations with login emails (`GET`, or `?ticket=<id>` for a signed
   attachment URL), status changes and Trello forwarding
-  (`POST {action:'status'|'forward', …}`) and organisation login linking
-  (`POST {action:'link-owner'|'unlink-owner', organisationSlug, email}`).
-  Requires a Supabase Auth session whose user is in `support_admins` (401/403
-  otherwise); rewritten to the `support-admin` function on Netlify.
+  (`POST {action:'status'|'forward', …}`), organisation login linking
+  (`POST {action:'link-owner'|'unlink-owner', organisationSlug, email}`) and
+  organisation creation
+  (`POST {action:'create-org', name, slug, country, region, cohort, summary}`
+  → always `publication_status='published'`, friendly 409 on duplicate
+  slug). Requires a Supabase Auth session whose user is in `support_admins`
+  (401/403 otherwise); rewritten to the `support-admin` function on Netlify.
+  The directory honours `?edit=1` on `/org/<slug>` to auto-open the profile
+  editor for accounts with edit access.
 
 Static serving is restricted to the three supplied HTML files,
 `/assets/` and the `/org/<slug>` route. Repository source files are not

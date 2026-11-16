@@ -378,9 +378,11 @@ const server = createServer(async (request, response) => {
         result = await supportDesk.linkOrganisationOwner(body.organisationSlug, body.email);
       } else if (body.action === 'unlink-owner') {
         result = await supportDesk.unlinkOrganisationOwner(body.organisationSlug);
+      } else if (body.action === 'create-org') {
+        result = await supportDesk.createOrganisation(body);
       } else {
         sendJson(response, 400, {
-          error: 'Action must be "status", "forward", "link-owner" or "unlink-owner".',
+          error: 'Action must be "status", "forward", "link-owner", "unlink-owner" or "create-org".',
         });
         return;
       }

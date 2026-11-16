@@ -135,6 +135,10 @@ async function hydrateDirectory() {
     }
     if (orgPageSlug) {
       renderOrgPage();
+      if (new URLSearchParams(location.search).get('edit') === '1') {
+        const editButton = $('org-page-edit');
+        if (editButton && !editButton.hidden) editButton.click();
+      }
     } else {
       applyStateFromHash();
     }

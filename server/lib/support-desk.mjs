@@ -31,6 +31,22 @@ export const ORGANISATION_TYPES = new Set([
 // keep the table default 'Received' for rows created before this list).
 export const TICKET_STATUSES = new Set(['Received', 'In progress', 'Forwarded', 'Closed']);
 
+// Allowed values for the admin "Add organisation" form — must match the
+// check constraints on public.organisations (supabase/schema.sql).
+const ORGANISATION_COUNTRIES = new Set([
+  'Angola', 'Benin', 'Botswana', 'Burkina Faso', 'Cameroon',
+  'Central African Republic', 'Chad', 'Comoros', "Côte d'Ivoire",
+  'Democratic Republic of the Congo', 'Gabon', 'Gambia', 'Ghana', 'Guinea',
+  'Guinea Bissau', 'Kenya', 'Lesotho', 'Liberia', 'Madagascar', 'Malawi',
+  'Mali', 'Mauritania', 'Mauritius', 'Mozambique', 'Namibia', 'Niger',
+  'Nigeria', 'Republic of the Congo', 'Rwanda', 'Senegal', 'Sierra Leone',
+  'Somalia', 'Somaliland', 'South Africa', 'South Sudan', 'Tanzania', 'Togo',
+  'Uganda', 'Zambia', 'Zimbabwe',
+]);
+const ORGANISATION_REGIONS = new Set([
+  'Southern Africa', 'Eastern Africa', 'Central Africa', 'West Africa',
+]);
+
 const ATTACHMENT_MIME_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -845,6 +861,62 @@ export class SupportDeskService {
     );
     if (!updated?.length) throw httpError(404, 'That organisation could not be found.');
     return { organisationSlug: slug, unlinked: true };
+  }
+
+  /**
+   * Create an organisation from the admin console ("Add organisation").
+   * Always published: the live directory only lists published rows, and the
+   * admin Edit flow needs the new profile to be visible there immediately.
+   */
+  async createOrganisation(input = {}) {
+    const name = String(input.name || '').trim();
+    if (name.length < 2 || name.length > 180) {
+      throw httpError(400, 'Organisation name must be between 2 and 180 characters.');
+    }
+    const slug = String(input.slug || '').trim().toLowerCase();
+    if (slug.length > 80 || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+      throw httpError(400, 'Profile address must be lowercase letters, numbers and hyphens, like "digital-woman-uganda".');
+    }
+    const country = String(input.country || '').trim();
+    if (!ORGANISATION_COUNTRIES.has(country)) {
+      throw httpError(400, 'Choose a country from the list.');
+    }
+    const region = String(input.region || '').trim();
+    if (!ORGANISATION_REGIONS.has(region)) {
+      throw httpError(400, 'Choose a region from the list.');
+    }
+    const cohort = String(input.cohort || '').trim() || 'Cohort 1';
+    if (cohort.length > 80) throw httpError(400, 'Cohort must be 80 characters or fewer.');
+    const summary = String(input.summary || '').trim();
+    if (summary.length > 240) throw httpError(400, 'Summary must be 240 characters or fewer.');
+
+    let created;
+    try {
+      created = await this.supabaseRequest(
+        '/rest/v1/organisations?select=slug,name,publication_status',
+        {
+          method: 'POST',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({
+            slug,
+            name,
+            country,
+            region,
+            cohort,
+            summary,
+            publication_status: 'published',
+          }),
+        },
+      );
+    } catch (error) {
+      if (/\b409\b/.test(error.message)) {
+        throw httpError(409, `An organisation with the address /${slug} already exists.`);
+      }
+      throw error;
+    }
+    const row = Array.isArray(created) ? created[0] : created;
+    if (!row?.slug) throw httpError(502, 'Supabase did not return the new organisation.');
+    return { slug: row.slug, name: row.name, publicationStatus: row.publication_status || 'published' };
   }
 
   /** Organisations with their login email, for the admin console. */

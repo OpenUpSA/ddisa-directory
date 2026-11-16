@@ -174,6 +174,12 @@ support queue:
   every profile, quick-view modal and `/org/<slug>` page — the submission
   carries the target `organisationId` and the server resolves it through
   `support_admins`.
+- **Organisation logins table**: each row has **Edit** (opens the profile
+  straight in the editor via `/org/<slug>?edit=1`), **Set login** /
+  **Unlink**, and the section header has **Add organisation** — a small
+  dialog (name, profile address, country, region, cohort, summary) that
+  creates a *published* row through the `create-org` admin action and jumps
+  to the new profile's editor to fill in the rest.
 - Authorization = membership of `public.support_admins`. Grant access with
   (run after creating the user in Authentication → Users):
 

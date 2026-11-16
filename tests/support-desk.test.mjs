@@ -540,3 +540,68 @@ test('link-owner creates or reuses the auth user and points the organisation at 
     (error) => /email/i.test(error.message),
   );
 });
+
+test('create-org validates input and inserts a published organisation', async (context) => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'ddisa-support-createorg-test-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  let posted = null;
+  let statusToReturn = 201;
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    if (url.includes('/rest/v1/organisations') && (options.method || 'GET') === 'POST') {
+      posted = JSON.parse(options.body);
+      if (statusToReturn !== 201) {
+        return new Response('duplicate key value violates unique constraint', { status: statusToReturn });
+      }
+      return jsonResponse(
+        [{ slug: posted.slug, name: posted.name, publication_status: 'published' }],
+        201,
+      );
+    }
+    return jsonResponse([]);
+  };
+  const service = new SupportDeskService({
+    root: directory,
+    fetchImpl,
+    env: {
+      SUPPORT_DESK_MODE: 'production',
+      SUPABASE_URL: 'https://project.supabase.example',
+      SUPABASE_SERVICE_ROLE_KEY: 'server-only-key',
+    },
+  });
+
+  const created = await service.createOrganisation({
+    name: 'Kopano Digital',
+    slug: 'kopano-digital',
+    country: 'South Africa',
+    region: 'Southern Africa',
+    cohort: 'Cohort 2',
+    summary: 'A test organisation.',
+  });
+  assert.equal(created.slug, 'kopano-digital');
+  assert.equal(created.name, 'Kopano Digital');
+  assert.equal(posted.publication_status, 'published', 'admin-created orgs go live immediately');
+  assert.equal(posted.country, 'South Africa');
+  assert.equal(posted.cohort, 'Cohort 2');
+
+  await assert.rejects(
+    () => service.createOrganisation({ name: 'X' }),
+    (error) => error.status === 400,
+  );
+  await assert.rejects(
+    () => service.createOrganisation({ name: 'Valid Name', slug: 'Bad Slug!', country: 'South Africa', region: 'Southern Africa' }),
+    (error) => error.status === 400 && /address/i.test(error.message),
+  );
+  await assert.rejects(
+    () => service.createOrganisation({ name: 'Valid Name', slug: 'valid-name', country: 'Atlantis', region: 'Southern Africa' }),
+    (error) => error.status === 400 && /country/i.test(error.message),
+  );
+
+  statusToReturn = 409;
+  await assert.rejects(
+    () => service.createOrganisation({ name: 'Valid Name', slug: 'valid-name', country: 'South Africa', region: 'Southern Africa' }),
+    (error) => error.status === 409 && /already exists/i.test(error.message),
+    'duplicate slugs surface a friendly 409',
+  );
+});

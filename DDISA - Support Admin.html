@@ -283,7 +283,9 @@
       line-height: 1.55;
     }
     .field { display: block; margin-top: 15px; font-size: 12px; font-weight: 700; color: #25364f; }
-    .field input {
+    .field input,
+    .field select,
+    .field textarea {
       display: block;
       width: 100%;
       min-height: 44px;
@@ -294,12 +296,16 @@
       background: white;
       color: var(--ink);
       font-size: 14px;
+      font-family: inherit;
     }
-    .field input:focus {
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
       outline: 0;
       border-color: var(--green);
       box-shadow: 0 0 0 3px #007e7018;
     }
+    .field textarea { min-height: 72px; resize: vertical; }
     #signin-code { text-align: center; letter-spacing: .4em; font-size: 18px; font-weight: 700; }
     .field[hidden] { display: none; }
     .dlg-actions {
@@ -357,6 +363,9 @@
     .section-head { margin: 38px 0 14px; }
     .section-head h2 { margin: 0; font-size: 21px; letter-spacing: -.4px; }
     .section-head p { margin: 6px 0 0; color: var(--muted); font-size: 12px; max-width: 780px; line-height: 1.6; }
+    .orgs-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    .orgs-head > div { flex: 1; min-width: 280px; }
+    .orgs-head > button { flex-shrink: 0; margin-top: 4px; white-space: nowrap; }
     .link-btn + .link-btn { margin-left: 8px; }
     .hint { margin: 8px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.55; }
 
@@ -436,9 +445,12 @@
     </section>
 
     <section id="orgs-panel" hidden>
-      <div class="section-head">
-        <h2>Organisation logins</h2>
-        <p>Link a login email to an organisation so that person can edit its profile anywhere in the directory (the passwordless sign-in). If no Supabase account exists for the address, one is created automatically. Support admins can edit every organisation either way.</p>
+      <div class="section-head orgs-head">
+        <div>
+          <h2>Organisation logins</h2>
+          <p>Link a login email to an organisation so that person can edit its profile anywhere in the directory (the passwordless sign-in). If no Supabase account exists for the address, one is created automatically. Support admins can edit every organisation either way.</p>
+        </div>
+        <button class="btn-primary" id="add-org" type="button">Add organisation</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -501,6 +513,87 @@
       <div class="dlg-actions">
         <button class="btn-primary" id="owner-save" type="button">Save login email</button>
         <button class="btn-ghost" id="owner-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="create-dialog" aria-labelledby="create-title">
+    <div class="dlg-top">
+      <h2 id="create-title">Add organisation</h2>
+      <button id="create-close" class="dlg-close" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="dlg-body">
+      <label class="field" for="create-name">Name
+        <input id="create-name" type="text" maxlength="180" required placeholder="Kopano Digital">
+      </label>
+      <label class="field" for="create-slug">Profile address (/org/…)
+        <input id="create-slug" type="text" maxlength="80" placeholder="kopano-digital">
+      </label>
+      <label class="field" for="create-country">Country
+        <select id="create-country" required>
+          <option value="">Choose a country…</option>
+          <option>Angola</option>
+          <option>Benin</option>
+          <option>Botswana</option>
+          <option>Burkina Faso</option>
+          <option>Cameroon</option>
+          <option>Central African Republic</option>
+          <option>Chad</option>
+          <option>Comoros</option>
+          <option>Côte d'Ivoire</option>
+          <option>Democratic Republic of the Congo</option>
+          <option>Gabon</option>
+          <option>Gambia</option>
+          <option>Ghana</option>
+          <option>Guinea</option>
+          <option>Guinea Bissau</option>
+          <option>Kenya</option>
+          <option>Lesotho</option>
+          <option>Liberia</option>
+          <option>Madagascar</option>
+          <option>Malawi</option>
+          <option>Mali</option>
+          <option>Mauritania</option>
+          <option>Mauritius</option>
+          <option>Mozambique</option>
+          <option>Namibia</option>
+          <option>Niger</option>
+          <option>Nigeria</option>
+          <option>Republic of the Congo</option>
+          <option>Rwanda</option>
+          <option>Senegal</option>
+          <option>Sierra Leone</option>
+          <option>Somalia</option>
+          <option>Somaliland</option>
+          <option>South Africa</option>
+          <option>South Sudan</option>
+          <option>Tanzania</option>
+          <option>Togo</option>
+          <option>Uganda</option>
+          <option>Zambia</option>
+          <option>Zimbabwe</option>
+        </select>
+      </label>
+      <label class="field" for="create-region">Region
+        <select id="create-region" required>
+          <option value="">Choose a region…</option>
+          <option>Southern Africa</option>
+          <option>Eastern Africa</option>
+          <option>Central Africa</option>
+          <option>West Africa</option>
+        </select>
+      </label>
+      <label class="field" for="create-cohort">Cohort
+        <input id="create-cohort" type="text" maxlength="80" value="Cohort 1">
+      </label>
+      <label class="field" for="create-summary">Short summary (optional)
+        <textarea id="create-summary" maxlength="240" rows="2" placeholder="One line shown on the directory card"></textarea>
+      </label>
+      <p class="hint">Created as <strong>published</strong>, so it appears in the directory straight away — then use <strong>Edit</strong> on its row (or on the profile page) to fill in the full description, contacts, offerings and links.</p>
+      <p class="msg" id="create-msg" role="alert" aria-live="polite"></p>
+      <div class="dlg-actions">
+        <button class="btn-primary" id="create-save" type="button">Create organisation</button>
+        <button class="btn-ghost" id="create-cancel" type="button">Cancel</button>
       </div>
     </div>
   </dialog>
@@ -898,6 +991,7 @@
         <td><span class="strong">${esc(o.name)}</span><span class="cell-sub">/${esc(o.slug)}</span></td>
         <td>${o.ownerEmail ? esc(o.ownerEmail) : '<span class="muted">Not linked</span>'}</td>
         <td class="row-cell">
+          <button class="link-btn edit-org" data-slug="${esc(o.slug)}" type="button">Edit</button>
           <button class="link-btn set-owner" data-slug="${esc(o.slug)}" type="button">Set login</button>${o.ownerEmail ? ` <button class="link-btn unlink-owner" data-slug="${esc(o.slug)}" type="button">Unlink</button>` : ''}
         </td>
       </tr>`).join('');
@@ -931,6 +1025,8 @@
     }
 
     $('org-rows').addEventListener('click', (event) => {
+      const editBtn = event.target.closest('.edit-org');
+      if (editBtn) { window.location.href = `/org/${editBtn.dataset.slug}?edit=1`; return; }
       const setBtn = event.target.closest('.set-owner');
       if (setBtn) { openOwnerDialog(setBtn.dataset.slug); return; }
       const unlinkBtn = event.target.closest('.unlink-owner');
@@ -958,6 +1054,73 @@
         );
       } catch (error) {
         ownerMsg(error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // ------------------------------------------------------ add organisation --
+    let createSlugTouched = false;
+    function slugify(value) {
+      return String(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+    }
+    function createMsg(message, kind) {
+      const el = $('create-msg');
+      el.textContent = message || '';
+      el.className = 'msg' + (message ? ' show ' + (kind || 'error') : '');
+    }
+    $('add-org').addEventListener('click', () => {
+      $('create-name').value = '';
+      $('create-slug').value = '';
+      $('create-country').value = '';
+      $('create-region').value = '';
+      $('create-cohort').value = 'Cohort 1';
+      $('create-summary').value = '';
+      createSlugTouched = false;
+      createMsg('');
+      $('create-dialog').showModal();
+      $('create-name').focus();
+    });
+    $('create-name').addEventListener('input', () => {
+      if (!createSlugTouched) $('create-slug').value = slugify($('create-name').value);
+    });
+    $('create-slug').addEventListener('input', () => { createSlugTouched = true; });
+    $('create-close').addEventListener('click', () => $('create-dialog').close());
+    $('create-cancel').addEventListener('click', () => $('create-dialog').close());
+    $('create-save').addEventListener('click', async () => {
+      const name = $('create-name').value.trim();
+      const slug = $('create-slug').value.trim().toLowerCase();
+      const country = $('create-country').value;
+      const region = $('create-region').value;
+      if (name.length < 2) { createMsg('Enter the organisation name.'); return; }
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+        createMsg('Profile address: lowercase letters, numbers and hyphens only.');
+        return;
+      }
+      if (!country) { createMsg('Choose a country.'); return; }
+      if (!region) { createMsg('Choose a region.'); return; }
+      const button = $('create-save');
+      button.disabled = true;
+      createMsg('Creating…', 'ok');
+      try {
+        const result = await adminPost({
+          action: 'create-org',
+          name,
+          slug,
+          country,
+          region,
+          cohort: $('create-cohort').value.trim() || 'Cohort 1',
+          summary: $('create-summary').value.trim(),
+        });
+        organisations.push({ slug: result.slug, name: result.name, ownerEmail: '' });
+        organisations.sort((a, b) => a.name.localeCompare(b.name));
+        renderOrgs();
+        $('create-dialog').close();
+        actionMsg(`${result.name} created — opening its editor.`, 'ok');
+        window.location.href = `/org/${result.slug}?edit=1`;
+      } catch (error) {
+        createMsg(error.message, 'error');
       } finally {
         button.disabled = false;
       }
